@@ -12,6 +12,31 @@
 
 ## Unreleased
 
+## v0.2.0-codex-passport - 2026-10-02
+
+First public preview of Codex Passport Companion, based on upstream `0b9e4c8`.
+
+- Added separate BLE, USB and Wi-Fi Codex companion firmware, with local Mac
+  speech recognition, Simplified Chinese review before sending, conversation
+  switching, reply display and busy-thread message queues.
+- Added a single-page weekly quota view with automatic reset time and the two
+  earliest reset-opportunity expiry dates, plus a UTC+8, 24-hour clock.
+- Added independent offline clock, Pomodoro and stopwatch firmware.
+- Added an Apple Silicon Mac window with account/model checks, model reuse or
+  download, and USB/BLE automatic reconnection with draft and dedupe retention.
+- Published bilingual setup/build guides, Chinese font assets and licenses,
+  explicitly named full images for `0x0`, and a separately downloadable Mac app.
+- The software adds no paid speech/API service; an existing supported Codex
+  account and quota are required. The app is ad-hoc signed, not notarized.
+  Clean-Mac setup, long sleep/repeated reconnects, and full voice acceptance in
+  the new window remain unverified. Release assets retain their pre-publication
+  build hashes; they were not rebuilt or flashed solely for publication.
+
+## Upstream baseline notes (pending review)
+
+The following inherited notes are retained for upstream history. They are not
+new Companion release claims.
+
 - Added the supplied 80-byte CW2017 profile for the specified 520 mAh cell, including content/update-flag checks, verified writes, the required restart sequence, and bounded SOC-readiness polling.
 
 - Expanded the environment bootstrap document: added Espressif's Git service mirror (`git.espressif.com.cn`) as the preferred mainland-China route for ESP-IDF v5.5.3 and its submodules, documented submodule long-wait/timeout handling, in-place repair, and the pinned-commit shallow fetch for large submodules such as `esp32-wifi-lib`, warned about stale per-repository Jihulab `insteadOf` residue, and added the official offline release archive as a last-resort fallback (learned from `esp-mosaico/esp-mosaico-vibe`).
