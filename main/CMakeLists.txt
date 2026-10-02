@@ -1,16 +1,19 @@
+set(app_sources "companion_main.c" "../assets/fonts/passport_font_16.c")
+if(CONFIG_PASSPORT_MODE_OFFLINE)
+    list(APPEND app_sources "companion_offline_model.c" "companion_offline_ui.c")
+else()
+    list(APPEND app_sources "companion_model.c" "companion_runtime.c" "companion_ui.c")
+    if(CONFIG_PASSPORT_MODE_USB)
+        list(APPEND app_sources "companion_transport_usb.c" "companion_link.c" "companion_wire.c")
+    elseif(CONFIG_PASSPORT_MODE_BLE)
+        list(APPEND app_sources "companion_transport_ble.c" "companion_link.c" "companion_wire.c" "companion_adpcm.c")
+    else()
+        list(APPEND app_sources "companion_config.c" "companion_transport_wifi.c")
+    endif()
+endif()
 idf_component_register(
-    SRCS "main.c"
-         "demo_navigation.c"
-         "ui_pixel.c"
-         "ui_pixel_math.c"
-         "demo_display.c"
-         "demo_button.c"
-         "demo_audio.c"
-         "demo_battery.c"
-         "demo_radio.c"
-         "demo_wifi.c"
-         "demo_ble.c"
-         "demo_low_power.c"
+    SRCS ${app_sources}
     INCLUDE_DIRS "."
-    REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash
+    REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash
+             esp_http_client json esp_driver_usb_serial_jtag bt
 )

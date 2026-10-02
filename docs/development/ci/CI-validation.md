@@ -7,6 +7,9 @@
 Two workflows validate pull requests: `.github/workflows/static-checks.yml` and
 `.github/workflows/firmware-checks.yml`. Both run for pull requests, pushes to
 `main`, and manual dispatch; local development and CI share `tools/validate.sh`.
+On this application branch, static checks also run on pushes to
+`feature/codex-companion` and install `bridge/requirements.txt` in an isolated
+CI virtual environment before testing the host helper.
 
 ## Workflows
 

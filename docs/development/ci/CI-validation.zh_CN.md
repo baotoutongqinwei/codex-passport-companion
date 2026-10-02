@@ -7,6 +7,8 @@
 两个工作流验证 PR：`.github/workflows/static-checks.yml` 与
 `.github/workflows/firmware-checks.yml`。两者都在 Pull Request、`main` push 和手动触发时运行，
 与本地共用 `tools/validate.sh`。
+在本应用分支，静态检查还会在 `feature/codex-companion` 的 push 上运行，
+并先在独立 CI 虚拟环境安装 `bridge/requirements.txt`，以测试配套程序。
 
 ## 工作流
 

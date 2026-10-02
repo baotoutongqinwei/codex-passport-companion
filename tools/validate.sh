@@ -2,10 +2,16 @@
 set -euo pipefail
 
 mode="${1:---all}"
+profile="${3:-wifi}"
+if [[ $# -gt 1 && ( "$2" != "--profile" || $# -ne 3 ) ]]; then
+    echo "Usage: $0 [--all|--static|--firmware] [--profile wifi|usb|ble|offline]" >&2
+    exit 2
+fi
+case "$profile" in wifi|usb|ble|offline) ;; *) echo "Invalid profile" >&2; exit 2 ;; esac
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-    echo "Usage: $0 [--all|--static|--firmware]" >&2
+    echo "Usage: $0 [--all|--static|--firmware] [--profile wifi|usb|ble|offline]" >&2
 }
 
 run_static_checks() {
@@ -24,6 +30,16 @@ run_static_checks() {
     "${actionlint_bin}" -color .github/workflows/*.yml
 
     test_dir="$(mktemp -d /tmp/ai-passport-host-tests.XXXXXX)"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_companion_model.c main/companion_model.c -o "${test_dir}/test_companion_model"
+    "${test_dir}/test_companion_model"
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_bridge.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_font.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_transports.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_desktop.py
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_companion_offline.c main/companion_offline_model.c -o "${test_dir}/test_companion_offline"
+    "${test_dir}/test_companion_offline"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_ui_pixel_math.c main/ui_pixel_math.c \
         -o "${test_dir}/test_ui_pixel_math"
@@ -81,18 +97,23 @@ run_firmware_checks() (
     validation_build_dir="$(mktemp -d /tmp/ai-passport-firmware.XXXXXX)"
     trap 'case "${validation_build_dir}" in /tmp/ai-passport-firmware.*) rm -rf -- "${validation_build_dir}" ;; esac' EXIT
 
-    SDKCONFIG_DEFAULTS="${repo_root}/sdkconfig.defaults" \
+    SDKCONFIG_DEFAULTS="${repo_root}/sdkconfig.defaults;${repo_root}/config/sdkconfig.${profile}" \
         idf.py -B "${validation_build_dir}" \
         -D "SDKCONFIG=${validation_build_dir}/sdkconfig" build
     idf.py -B "${validation_build_dir}" merge-bin \
         -o "${validation_build_dir}/FoloToy-AI-Passport-full.bin"
     python3 tools/verify_firmware.py "${validation_build_dir}"
+    python3 tools/check_profile.py "${validation_build_dir}/sdkconfig" "${profile}" "${validation_build_dir}/FoloToy-AI-Passport.elf"
     PYTHONDONTWRITEBYTECODE=1 python3 tools/archive_firmware.py create \
         "${validation_build_dir}" --archive-root "${repo_root}/build/firmware"
-    mkdir -p "${repo_root}/build"
+    mkdir -p "${repo_root}/build/variants/${profile}"
+    idf.py -B "${validation_build_dir}" size > "${repo_root}/build/variants/${profile}/size.txt"
     install -m 0644 \
         "${validation_build_dir}/FoloToy-AI-Passport-full.bin" \
-        "${repo_root}/build/FoloToy-AI-Passport-full.bin"
+        "${repo_root}/build/variants/${profile}/FoloToy-AI-Passport-full.bin"
+    if [[ "${profile}" == "wifi" ]]; then
+        install -m 0644 "${validation_build_dir}/FoloToy-AI-Passport-full.bin" "${repo_root}/build/FoloToy-AI-Passport-full.bin"
+    fi
     echo "Firmware build: PASS"
 )
 

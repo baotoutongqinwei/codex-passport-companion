@@ -2,8 +2,20 @@ build/
 sdkconfig
 sdkconfig.old
 managed_components/
+.local/
+__pycache__/
+*.pyc
 .vscode/
 .idea/
+.DS_Store
+.venv/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*.key
 
 # Generated repository-local links; canonical skill sources live in skills/.
 /.agents/skills/passport-develop

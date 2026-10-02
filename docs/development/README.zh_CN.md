@@ -33,7 +33,7 @@
 ## CI（ci）
 
 - [CI-validation.zh_CN.md](ci/CI-validation.zh_CN.md)：Pull Request 与 main 的自动仓库检查、host tests 和固件验证。
-- [CI-build-and-release.zh_CN.md](ci/CI-build-and-release.zh_CN.md)：自动构建与发布说明（tag 触发自动编译固件并发布 Release）。
+- [CI-build-and-release.zh_CN.md](ci/CI-build-and-release.zh_CN.md)：手动选择模式构建固件，以及核验后发布 Release。
 - [CI-sync-main.zh_CN.md](ci/CI-sync-main.zh_CN.md)：上游同步说明（定期把上游 `FoloToy/ai-passport` 的 `main` 同步到本 fork 的 `main`）。
 
 ## 发布/完成流程（release）

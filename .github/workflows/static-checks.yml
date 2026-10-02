@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/codex-companion
   workflow_dispatch:
 
 permissions:
@@ -27,4 +28,8 @@ jobs:
           echo "ACTIONLINT_BIN=${actionlint_bin}" >> "$GITHUB_ENV"
 
       - name: Validate repository and run host tests
-        run: ./tools/validate.sh --static
+        run: |
+          python3 -m venv .local/ci-venv
+          .local/ci-venv/bin/python -m pip install -r bridge/requirements.txt
+          source .local/ci-venv/bin/activate
+          ./tools/validate.sh --static

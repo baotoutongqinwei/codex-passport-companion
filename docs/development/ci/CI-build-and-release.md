@@ -4,15 +4,28 @@
 
 # Automated Build and Release
 
-`.github/workflows/build-firmware.yml` builds and publishes firmware for tags and supports manual dispatch. Ordinary branch pushes do not trigger it. Keep this page synchronized with the workflow.
+`.github/workflows/build-firmware.yml` supports manual builds with a required
+`profile` choice: `ble` (default), `usb`, `wifi`, or `offline`. Branch and tag
+pushes do not trigger it. Keep this page synchronized with the workflow.
 
-The build job restores ccache, runs `./tools/validate.sh --firmware` with ESP-IDF 5.5.3 for ESP32-C3, verifies the bootloader, partition table, and application at the offsets generated in `flash_args`, checks the 8 MB Flash arguments and configured partition layout, then uploads `FoloToy-AI-Passport-full.bin`. The repository default places these images at `0x0`, `0x8000`, and `0x10000`; user-defined partition tables may change the application offset. A separate least-privilege release job publishes that artifact only for a tag.
+In Actions, select **Build firmware**, choose the application branch and profile,
+and run the workflow. It restores ccache, runs
+`./tools/validate.sh --firmware --profile <profile>` with ESP-IDF 5.5.3 for
+ESP32-C3, verifies the merged segments and 8 MB Flash layout, and uploads
+`build/variants/<profile>/FoloToy-AI-Passport-full.bin` in an artifact named
+`codex-passport-<profile>-<commit>`. All Actions are pinned to full commit SHAs;
+the build has only `contents: read` permission.
 
-All Actions are pinned to full commit SHAs. The build job has `contents: read`; only the tag release job receives `contents: write`.
+Release publication is a separate maintainer action after reviewing the exact
+assets and test evidence. Publish the Mac app and clearly named
+`codex-passport-<profile>-full-0x0.bin` images with a SHA-256 list and a manifest.
+Creating a tag does not silently publish a default Wi-Fi build. Record each
+asset's build provenance and distinguish earlier hardware tests from unflashed
+rebuilds. A source tag alone does not prove an existing binary was built from it.
 
 ## Browser flashing
 
-Open `https://ai-passport.folotoy.cn/tools/web-flasher/`, connect the USB JTAG/serial device, select the release's merged `FoloToy-AI-Passport-full.bin`, choose a baud rate such as 460800, and write it from `0x0`. The browser performs local writing and verification; it does not upload the firmware file.
+Open `https://ai-passport.folotoy.cn/tools/web-flasher/`, connect the USB JTAG/serial device, select the matching merged `codex-passport-<profile>-full-0x0.bin`, choose a baud rate such as 460800, and write it from `0x0`. The browser performs local writing and verification; it does not upload the firmware file.
 
 For board and flashing details, see [the hardware development guide](../../hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md).
 
@@ -28,8 +41,8 @@ make sure the release title shows both.
   The `<app-name>` is the application this release builds (see the
   repository-relative `docs/reference/<username>/<app-name>/` archive naming).
   A tag that only says a version is ambiguous when several apps share the tree.
-- **After the release is published, confirm the release title.** The workflow
-  sets the title to the tag name, so a correctly-named tag already reads
+- **After the release is published, confirm the release title.** Set the release
+  title to the tag name so a correctly-named release reads
   `v0.1.0-voice-keychain`. If the tag did not include the app, or the title is
   not obvious at a glance, edit the release (GitHub: `Edit release`; GitLab:
   edit the tag) so the title is `<version> <app-name>`, e.g. `v0.1.0 Voice
@@ -61,14 +74,14 @@ part of the commit that is tagged.
 
 ## Release notes
 
-A tag-triggered release succeeds only when the merged firmware and its release
+A release is complete only when the merged firmware and its release
 notes travel together. After the release is published, write release notes that
 explain the build to a user who may not have read the repository. Cover three
 things:
 
 - **What's new**: the features, behaviors, or fixes this release adds or
   changes compared with the previous one. Keep it user-facing, not a commit log.
-- **How to build**: run `./tools/validate.sh --firmware` to produce and verify
+- **How to build**: run `./tools/validate.sh --firmware --profile <profile>` to produce and verify
   the merged firmware, then identify `FoloToy-AI-Passport-full.bin` as the file
   to flash from `0x0`. `idf.py build` alone performs incremental compilation;
   it does not create or verify the merged full image and is not an alternative

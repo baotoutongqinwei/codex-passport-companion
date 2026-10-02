@@ -1,0 +1,14 @@
+menu "Passport application"
+choice PASSPORT_MODE
+    prompt "Application / transport"
+    default PASSPORT_MODE_WIFI
+config PASSPORT_MODE_WIFI
+    bool "Codex companion over Wi-Fi"
+config PASSPORT_MODE_USB
+    bool "Codex companion over USB serial"
+config PASSPORT_MODE_BLE
+    bool "Codex companion over authenticated BLE"
+config PASSPORT_MODE_OFFLINE
+    bool "Offline clock, focus timer and stopwatch"
+endchoice
+endmenu
