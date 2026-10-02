@@ -12,8 +12,8 @@ provides a clock, Pomodoro timer and stopwatch.
 
 This is a community application derived from FoloToy's complete project. It is
 not an official OpenAI or FoloToy product. The default application branch is
-`feature/codex-companion`; the current P1 and desktop updates are on `feature/codex-p1`.
-Upstream history and the reusable BSP are retained.
+`master`, including the P1 and desktop updates. Upstream history and the reusable
+BSP are retained; the earlier feature branches remain available.
 
 ## Screenshots
 
@@ -47,6 +47,7 @@ Simplified Chinese. [Capture sources and reproduction](assets/images/codex/READM
 
 | Batch · date | Changes | Upgrade |
 | --- | --- | --- |
+| 004 · 2026-10-02 | Integrated the updates into `master` and made it the default branch | Source/documentation only |
 | 003 · 2026-10-02 | Numbered update history and this screenshot gallery | Documentation only |
 | 002 · 2026-10-02 | Desktop 0.3.1, three-page layout, light/dark appearance and app icon | Replace Mac app; no flashing for appearance |
 | 001 · 2026-10-02 | Recording feedback, conversation status/unread, quiet task alerts | Update Mac helper and matching card firmware |
@@ -109,8 +110,7 @@ Do not disable corporate network/peripheral protection to connect the card.
 
 ## Build from source
 
-Clone the application branch you intend to build (`feature/codex-p1` for the
-updates shown above). Start with `AGENTS.md` and
+Clone the default application branch, `master`. Start with `AGENTS.md` and
 `docs/README.md` if using an AI development agent. The required project skills
 are in `skills/`. Existing checkouts and local changes should be preserved.
 

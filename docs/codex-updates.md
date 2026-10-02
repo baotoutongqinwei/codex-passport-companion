@@ -86,3 +86,21 @@ implementation from batches 001–002. It does not publish a GitHub release.
 | Host tests | PASS — pre-commit static gate, bilingual/local-link checks and regenerated LVGL card previews. |
 | Device tests | PASS, limited to the existing BLE connection while taking desktop screenshots; no flashing or new firmware acceptance. |
 | Unverified | P1 hardware acceptance remains as listed in batch 001. |
+
+## 004 — 2026-10-02 — Integrate into the default master branch
+
+| Area | Change |
+| --- | --- |
+| Integration | Created `master` from the previous default branch and fast-forwarded it to P1/desktop commit `57f92c2`, preserving history. |
+| GitHub | Set `master` as the default branch. Existing `feature/codex-companion` and `feature/codex-p1` branches remain available. |
+| Documentation | Updated both READMEs so the default checkout contains the current application, screenshots and update history. |
+
+**Upgrade:** source integration and documentation only. No new runtime change,
+binary release or flashing is part of this batch.
+
+| Validation | Result |
+| --- | --- |
+| Build | PASS from batch 002; application and firmware code unchanged. |
+| Host tests | PASS — pre-commit static/host gate and fast-forward ancestry check. GitHub API confirmed the new default branch. |
+| Device tests | NOT RUN in this integration batch; earlier results remain in batches 001–003. |
+| Unverified | P1 hardware acceptance remains as listed in batch 001. |
