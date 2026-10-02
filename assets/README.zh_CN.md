@@ -25,11 +25,16 @@
 | [`images/readme-hardware-specs.png`](images/readme-hardware-specs.png) | 2172 × 724，PNG RGBA | 保留为可选技术参考图，不再用于首页主视觉。于 2026-09-17 使用内置图像生成工具为本仓库生成；已根据文档中的硬件能力契约核对图中的六项标签与参数。 |
 | [`images/logo-wordmark.png`](images/logo-wordmark.png) | 1648 × 336，PNG RGBA | 从仓库原始 `images/logo.png` 中精确裁切并去除背景的黑色字标；用于中英文项目 README 的浅色主题。 |
 | [`images/logo-wordmark-dark.png`](images/logo-wordmark-dark.png) | 1648 × 336，PNG RGBA | 提取字标的白色版本；README 使用 `<picture>` 在 GitHub 深色主题下显示。 |
+| [`images/codex-passport-icon.png`](images/codex-passport-icon.png) | 1254 × 1254，PNG RGBA | 独立助手图标源图，2026-10-02 由内置图像工具生成：薄荷绿护照卡片和终端符号，外围透明。用于 Mac 窗口与 Dock，随项目按 MIT 条款分发，不是 OpenAI 官方标志。提示词见 [`codex-passport-icon-prompt.txt`](images/codex-passport-icon-prompt.txt)。 |
+| [`images/codex-passport.icns`](images/codex-passport.icns) | ICNS，16–1024 px 标准尺寸 | 用 macOS 的 `sips` 和 `iconutil` 经 [`tools/build_desktop_icon.sh`](../tools/build_desktop_icon.sh) 保持原设计生成。注册到 PyInstaller 应用包，供 Finder 与 Dock 显示；仅供 Mac 使用，不写入卡片固件。 |
 
 - 使用描述性命名，并记录尺寸、像素格式、转换步骤与目标路径。
 - 优先采用适合 240 × 320 RGB565 显示的格式，并纳入 Flash 与内部 RAM 考量。
 - 许可允许时保留可编辑源文件，并记录来源与许可。
 - 图片中不得包含设备二维码秘密、凭证或个人数据。
+
+助手 README 使用的[界面图集](images/codex/README.zh_CN.md)包含原生 Mac 截图和固定示例数据的
+LVGL 卡片渲染图，并记录采集来源和刷新方法。
 
 ## 音乐与音效（music）
 

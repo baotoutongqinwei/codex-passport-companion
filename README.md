@@ -2,6 +2,8 @@
 
 # Codex Passport Companion
 
+<p align="center"><img src="assets/images/codex-passport-icon.png" width="96" alt="Codex Passport mint card icon"></p>
+
 A pocket Codex companion for [FoloToy AI Passport](https://gitee.com/FoloToy/ai-passport):
 review voice input, switch conversations, read replies and check weekly quota on
 a 240 × 320 card. The Mac runs Codex and local speech recognition; the card is a
@@ -9,19 +11,60 @@ lightweight display, microphone and controller. An independent offline firmware
 provides a clock, Pomodoro timer and stopwatch.
 
 This is a community application derived from FoloToy's complete project. It is
-not an official OpenAI or FoloToy product. Development lives on
-`feature/codex-companion`; upstream history and the reusable BSP are retained.
+not an official OpenAI or FoloToy product. The default application branch is
+`feature/codex-companion`; the current P1 and desktop updates are on `feature/codex-p1`.
+Upstream history and the reusable BSP are retained.
+
+## Screenshots
+
+### On your Mac
+
+Native connection dashboard, local voice recognition and quiet-hours settings.
+The app follows the macOS light/dark appearance.
+
+<p align="center"><img src="assets/images/codex/desktop-connection-dark.png" width="860" alt="Native Mac connection dashboard with the card connected"></p>
+
+| Local voice model · dark | Alert settings · light |
+| --- | --- |
+| <img src="assets/images/codex/desktop-voice-dark.png" width="430" alt="Local voice model page in dark appearance"> | <img src="assets/images/codex/desktop-alerts-light.png" width="430" alt="Alert switches and quiet hours in light appearance"> |
+
+### On your card
+
+| Weekly quota | Recent conversations | Recording feedback | Task complete |
+| --- | --- | --- | --- |
+| <img src="assets/images/codex/card-01-quota.png" width="200" alt="Weekly quota and reset dates"> | <img src="assets/images/codex/card-02-threads.png" width="200" alt="Conversation status and unread indicators"> | <img src="assets/images/codex/card-04-record.png" width="200" alt="Recording duration and microphone level"> | <img src="assets/images/codex/card-08-completed.png" width="200" alt="Task completion banner"> |
+
+| Offline clock | Pomodoro | Stopwatch |
+| --- | --- | --- |
+| <img src="assets/images/codex/card-12-offline-clock.png" width="200" alt="Independent offline clock"> | <img src="assets/images/codex/card-13-offline-focus.png" width="200" alt="Offline Pomodoro timer"> | <img src="assets/images/codex/card-14-offline-stopwatch.png" width="200" alt="Offline stopwatch"> |
+
+Mac dark screenshots show the packaged app; the light settings screenshot uses
+isolated sample preferences. Card images are **real LVGL renders at 240 × 320 with
+sample data**, not device photographs or hardware acceptance evidence. UI text is
+Simplified Chinese. [Capture sources and reproduction](assets/images/codex/README.md).
+
+## Latest updates
+
+| Batch · date | Changes | Upgrade |
+| --- | --- | --- |
+| 003 · 2026-10-02 | Numbered update history and this screenshot gallery | Documentation only |
+| 002 · 2026-10-02 | Desktop 0.3.1, three-page layout, light/dark appearance and app icon | Replace Mac app; no flashing for appearance |
+| 001 · 2026-10-02 | Recording feedback, conversation status/unread, quiet task alerts | Update Mac helper and matching card firmware |
+
+[Full update record and test results](docs/codex-updates.md). Release downloads
+may lag behind this branch; P1 card features still await hardware acceptance.
 
 ## Features
 
 | Feature | Behavior |
 | --- | --- |
 | Voice | Hold middle to record up to 45 seconds; release, review Simplified Chinese text, then click to send. Whisper base and OpenCC run locally on the Mac. |
-| Conversations | Browse recent Codex conversations, switch the voice target, page through replies and jump to the latest message. |
+| Conversations | Three rows per page ordered by interaction recency, with running/queued/desktop-action/unread state; switch the voice target and read replies. |
 | Busy threads | Confirmed messages enter the original thread's queue when supported; uncertain sends are never automatically retried. |
 | Quota | One page with 7-day remaining quota, automatic reset time and the earliest two available reset-opportunity expiry dates. No reset is consumed. |
 | Clock | Top-left UTC+8, 24-hour time; synced from the connected Mac. |
-| Mac window | Double-click app, account/model checks, USB/BLE choice, optional model download or reuse. |
+| Mac window | Native three-page app, light/dark appearance, original icon, account/model checks, USB/BLE choice and model reuse. |
+| Feedback and alerts | Recording phases and microphone level; completion/action-needed banners, optional sounds and UTC+8 quiet hours. Requires P1 firmware. |
 | Recovery | Reconnect the original USB/BLE device, preserve ready drafts and request dedupe in the running helper, discard interrupted recordings. |
 
 The software adds no paid speech or API service. You still need a supported,
@@ -66,7 +109,8 @@ Do not disable corporate network/peripheral protection to connect the card.
 
 ## Build from source
 
-Clone this repository's default application branch. Start with `AGENTS.md` and
+Clone the application branch you intend to build (`feature/codex-p1` for the
+updates shown above). Start with `AGENTS.md` and
 `docs/README.md` if using an AI development agent. The required project skills
 are in `skills/`. Existing checkouts and local changes should be preserved.
 
@@ -108,10 +152,10 @@ curl and a C/C++ compiler. Source builds and downloads need additional disk spac
 
 | Area | Recorded result |
 | --- | --- |
-| Build | Complete BLE gate, merged-image/archive verification and native Mac bundle passed. Other firmware modes have earlier recorded builds. |
-| Host tests | 54 companion tests plus repository/BSP checks passed, including lost receipts, duplicate prevention, queues, protocol, font coverage and model checks. |
-| Device tests | USB voice/reply round trip; BLE 45-second audio on the earlier helper; native Mac BLE state sync and one card power-cycle recovery passed. |
-| Unverified | Clean-Mac installation/permissions, Intel support, native-window USB hardware use, long sleep/wake, repeated radio interference and 45-second live audio through the new window. |
+| Build | Four P1 firmware profiles, merged-image/debug-archive verification and native Mac bundle passed; desktop 0.3.1 icon, signature and ZIP checks passed. |
+| Host tests | 68 companion Python tests plus repository/BSP/model checks passed. Actual LVGL navigation/rendering and native Mac page/settings checks passed. |
+| Device tests | Desktop 0.3.1 BLE state sync and page switching passed. Earlier results include USB voice/reply, BLE 45-second audio and one card power-cycle recovery. |
+| Unverified | New P1 card cues, level display and alert wake-up; clean-Mac installation, Intel, native-window USB, long sleep/wake and repeated radio interference. Voice was not repeated for desktop 0.3.1. |
 
 Intel/Windows/Linux desktop bundles are not supplied. Codex's experimental
 app-server queue and quota fields can change between versions; an unsupported

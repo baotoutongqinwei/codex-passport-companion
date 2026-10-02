@@ -27,11 +27,17 @@ Store reusable source images and generated display assets in `images/`.
 | [`images/readme-hardware-specs.png`](images/readme-hardware-specs.png) | 2172 × 724, PNG RGBA | Optional technical infographic retained as a reference asset; it is no longer used as the homepage hero. Generated for this repository with the built-in image generation tool on 2026-09-17; the six labels and values were checked against the documented hardware contract. |
 | [`images/logo-wordmark.png`](images/logo-wordmark.png) | 1648 × 336, PNG RGBA | Transparent black wordmark extracted from the repository's original `images/logo.png`; embedded in both project README files for light backgrounds. |
 | [`images/logo-wordmark-dark.png`](images/logo-wordmark-dark.png) | 1648 × 336, PNG RGBA | White version of the extracted wordmark, used by the README `<picture>` element when GitHub is in dark mode. |
+| [`images/codex-passport-icon.png`](images/codex-passport-icon.png) | 1254 × 1254, PNG RGBA | Original independent companion icon, generated with the built-in image tool on 2026-10-02: mint passport/card and terminal symbol, transparent surrounding canvas. Used in the Mac window and Dock. Distributed with the project's MIT terms; not an official OpenAI logo. Prompt: [`codex-passport-icon-prompt.txt`](images/codex-passport-icon-prompt.txt). |
+| [`images/codex-passport.icns`](images/codex-passport.icns) | ICNS, standard 16–1024 px representations | Derived without altering the design, using macOS `sips` and `iconutil` through [`tools/build_desktop_icon.sh`](../tools/build_desktop_icon.sh). Registered in the PyInstaller bundle for Finder and Dock. Mac-only asset; not embedded in card firmware. |
 
 - Use descriptive names and document dimensions, pixel format, conversion steps, and destination.
 - Prefer formats suitable for the 240 × 320 RGB565 display and account for Flash and internal RAM.
 - Preserve editable sources where licensing permits, and record the source and license.
 - Never commit device QR secrets, credentials, or personal data in images.
+
+The [companion screenshot gallery](images/codex/README.md) contains native Mac
+screenshots and deterministic LVGL card renders used by the fork's root README,
+with capture sources and refresh instructions.
 
 ## Music and sound effects
 

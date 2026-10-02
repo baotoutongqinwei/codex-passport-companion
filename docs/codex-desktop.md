@@ -4,7 +4,7 @@
 
 The native window is the beginner entry point for USB and BLE firmware. Existing
 Wi-Fi CLI and standalone offline firmware remain available; see [modes](codex-modes.md).
-This update requires no firmware change. Other ideas are in the [backlog](codex-improvements.md).
+P1 features need the matching updated Mac app and firmware. Other ideas are in the [backlog](codex-improvements.md).
 
 ## First launch
 
@@ -29,6 +29,42 @@ This update requires no firmware change. Other ideas are in the [backlog](codex-
 Only one updated GUI/CLI helper can own the card. Older diagnostic scripts
 predate this lock: check their drafts/queue and stop them first. The app never
 downloads a model automatically or calls a paid recognition service.
+
+## Window and icon
+
+Version 0.3.1 uses three native macOS pages selected from the sidebar: connection, speech
+model and notification settings. Connection shows device, Codex and account status; speech
+installs or reuses the local model; notifications exposes switches and quiet hours. A persistent
+status area retains progress and errors across pages. Navigation does not disconnect the card.
+The interface follows system light/dark appearance and uses macOS fonts for Chinese.
+The mint passport icon appears in the Dock, Finder and window branding.
+
+This window/icon update requires replacing the Mac app only; the card's P1 features still need
+the previous P1 firmware. Handle recordings and unsent drafts before normally quitting the old app.
+Existing model paths and notification preferences remain in the original data directory.
+
+## Recording, conversations and alerts
+
+| Feature | Use and limits |
+| --- | --- |
+| Recording feedback | Hold middle and wait for the recording label before speaking. Preparation, ready, upload and transcription have distinct text/colors. The meter shows relative input strength, not calibrated decibels. Release, review and confirm before sending; releasing during preparation cancels. |
+| Recent conversations | Three per page, ordered by Codex's actual interaction time, `recency_at`. Rows show processing, desktop attention, failure and pending voice messages tracked by this helper. Requires a Codex version supporting that sort key. |
+| Card unread | First observation establishes a baseline; later assistant-reply changes mark unread. Displaying that revision on the latest conversation page while awake clears it. Codex desktop read state is unchanged. Restarting the Mac helper establishes a new baseline. |
+| Task alerts | Completion or attention briefly appears in the top status line for six seconds. A sleeping display wakes for six seconds without navigating. At most one alert per 30 seconds; up to eight pending, discarded after 90 seconds. The same task event is not repeated. |
+| Settings | The Mac window can disable task alerts, enable sound and set quiet hours. Defaults: alerts on, sound off, UTC+8 22:00–08:00 quiet. Equal endpoints mean all-day quiet. Switches apply immediately; click Save hours after editing times. |
+| Sound | Optional recording-ready cue plays before capture; microphone buffers are drained before recording. Task cues and recording share one audio worker, preventing simultaneous playback during capture. Quiet hours also disable the recording cue. |
+
+Observation covers the three listed conversations, the selected conversation and up to eight recently
+opened conversations via background polling, not every Codex conversation globally. Content caches
+last five seconds, so status can lag. Alerts are supplementary: recording, pending drafts, quiet hours
+and disabled alerts suppress playback without a catch-up burst. Once taken for delivery, even an alert
+lost during disconnect is not replayed. Unread and notification queues live only in the Mac process;
+unread markers remain the entry point for missed replies. Handle permission requests on the computer.
+
+Private `alerts.json` stores only switches and times, never conversation content. The Wi-Fi CLI uses
+the same file in its own data directory; share `PASSPORT_DATA_DIR` with the GUI to share preferences
+and restart the CLI after changing them. Standalone offline firmware retains clock, Pomodoro and
+stopwatch; it has no Codex recording, conversations or alerts.
 
 ## Recovery and data
 
@@ -60,9 +96,16 @@ and prepare the pinned CPU engine with `tools/bootstrap_bridge.py`. Run
 The ARM64 bundle includes Python, USB/BLE dependencies, OpenCC and the CPU engine,
 but no model, account tokens, personal configuration or recordings.
 Source launch: `.local/transport-venv/bin/python bridge/desktop.py`.
+See [assets](../assets/README.md) for icon sources and provenance. After changing the source PNG,
+run `bash tools/build_desktop_icon.sh` on macOS to regenerate ICNS. The application build includes
+both ICNS and the PNG used by the window.
 
 `tests/test_companion_desktop.py` is in the validation gate. It covers device
 identity, lost receipts, uncertain sends, bounded failures, stop during
 scan/pairing/dispatch, preserved drafts, model verification and exclusive ownership.
+`tests/test_companion_activity.py` covers unread receipts, status refresh, dedupe, throttling,
+expiry, mute, UTC+8 midnight quiet hours and persistent settings. Actual LVGL rendering checks
+recording phases, three conversation rows and alert layout. Physical cue volume, microphone
+capture and button timing still require flashed-device acceptance.
 Physical radio loss, clean-Mac pairing, Gatekeeper, Intel, long idle and sleep/wake
 are separate checks, not proved by host tests.

@@ -11,7 +11,8 @@ static time_t preview_time(time_t *out) {
 
 static uint16_t pixels[240*320];
 static _Alignas(16) uint16_t draw_buffer[240*40];
-static int starts, stops, sends, cancels, selected_page;
+static int starts, stops, sends, cancels, selected_page, reads;
+static bool accept_read = true;
 static char selected_thread[CP_ID_SIZE];
 static int preview_passkey=-1;
 const char *cp_transport_name(void) { return "USB"; }
@@ -30,6 +31,10 @@ void cp_record_start(void) { ++starts; }
 void cp_record_stop(void) { ++stops; }
 void cp_send_draft(void) { ++sends; }
 void cp_cancel(void) { ++cancels; }
+bool cp_mark_read(const char *thread, const char *revision) {
+    assert(!strcmp(thread, s_thread) && !strcmp(revision, s.view.revision));
+    ++reads; return accept_read;
+}
 
 static void flush(lv_display_t *display, const lv_area_t *area, uint8_t *data) {
     uint16_t *source = (uint16_t *)data;
@@ -62,6 +67,19 @@ static void screenshot(const char *directory, const char *name, page_t page) {
             previous_bottom = lv_obj_get_y(rows[i]) + lv_obj_get_height(rows[i]);
         }
         assert(previous_bottom <= 311);
+    }
+    if (page == THREADS && preview_passkey < 0) {
+        assert(lv_obj_has_flag(s_rows[3], LV_OBJ_FLAG_HIDDEN));
+        for (int i=0; i<s.view.count; ++i) {
+            assert(lv_obj_get_height(s_row_text[i]) <= 22);
+            assert(lv_obj_get_height(s_row_status[i]) <= 22);
+            assert(lv_obj_get_y(s_rows[i])+lv_obj_get_height(s_rows[i]) < 271);
+        }
+    }
+    if (page == RECORD && preview_passkey < 0) {
+        assert(lv_obj_get_height(s_body) <= 118);
+        assert(lv_obj_get_height(s_level_text) <= 22);
+        assert(!lv_obj_has_flag(s_meter, LV_OBJ_FLAG_HIDDEN));
     }
     lv_obj_invalidate(s_screen);
     lv_refr_now(NULL);
@@ -109,9 +127,10 @@ int main(int argc, char **argv) {
     s.view.reset_credit_expiry[0] = 1791092503;
     s.view.reset_credit_expiry[1] = 1791174104;
     strcpy(s.view.credits, "--"); s.view.asr_ready = true;
-    s.view.count = 4;
+    s.view.p1 = true;
+    s.view.count = CP_THREAD_COUNT;
     const char *titles[] = {"完善代码并运行测试", "项目中的一个新想法", "检查固件内存使用", "修复网络连接问题"};
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < CP_THREAD_COUNT; ++i) {
         strcpy(s.view.threads[i].title, titles[i]);
         snprintf(s.view.threads[i].id, CP_ID_SIZE, "thread-%d", i);
     }
@@ -151,6 +170,9 @@ int main(int argc, char **argv) {
     handle((cp_key_t){BSP_BTN_OK, BSP_BTN_CLICK}); assert(s_page == HOME);
     handle((cp_key_t){BSP_BTN_OK, BSP_BTN_CLICK}); assert(s_page == THREADS);
     handle((cp_key_t){BSP_BTN_DOWN, BSP_BTN_CLICK}); assert(s_choice == 1);
+    strcpy(s.view.threads[0].status,"active"); s.view.threads[0].queued=3;
+    strcpy(s.view.threads[1].status,"needsDesktop"); s.view.threads[1].unread=true;
+    strcpy(s.view.threads[2].status,"idle"); s.view.threads[2].unread=true;
     screenshot(argv[1], "02-threads", THREADS);
     handle((cp_key_t){BSP_BTN_OK, BSP_BTN_CLICK});
     assert(s_page == CHAT && strcmp(selected_thread, "thread-1") == 0 && selected_page == -1);
@@ -158,10 +180,28 @@ int main(int argc, char **argv) {
     strcpy(s.view.status, "active"); s.view.pages = 6; s.view.page = 5;
     strcpy(s.view.body, "Codex\n我已经完成代码检查。\n发现两处连接异常，\n正在修复并运行测试。\n\n结果会继续同步到这里。");
     screenshot(argv[1], "03-chat", CHAT);
+    strcpy(s.view.revision,"revision-1"); s.view.unread=true;
+    s_dark=true; read_latest(); assert(reads==0); s_dark=false;
+    s_page=HOME; read_latest(); assert(reads==0); s_page=CHAT;
+    s.view.page=4; read_latest(); assert(reads==0); s.view.page=5;
+    preview_passkey=123456; read_latest(); assert(reads==0); preview_passkey=-1;
+    accept_read=false; read_latest(); assert(reads==1);
+    accept_read=true; read_latest(); assert(reads==2);
+    read_latest(); assert(reads==2);
+    s_read_at-=5000000; read_latest(); assert(reads==3); // Lost receipt can retry.
+    s.view.unread=false; s_read_at-=5000000; read_latest(); assert(reads==3);
     handle((cp_key_t){BSP_BTN_OK, BSP_BTN_LONG}); assert(starts == 1);
     handle((cp_key_t){BSP_BTN_OK, BSP_BTN_RELEASE}); assert(stops == 1);
+    s.mode=CP_STARTING; screenshot(argv[1],"04a-preparing",RECORD);
+    s.mode=CP_READY; screenshot(argv[1],"04b-ready",RECORD);
     s.mode = CP_RECORDING; s.recorded_ms = 5000;
+    s.input_level=60;
     screenshot(argv[1], "04-record", RECORD);
+    assert(lv_bar_get_value(s_meter)==60);
+    s.input_level=0; screenshot(argv[1],"04c-quiet",RECORD);
+    s.input_level=100; screenshot(argv[1],"04d-loud",RECORD);
+    s.mode=CP_FINISHING; screenshot(argv[1],"04e-upload",RECORD);
+    s.mode=CP_TRANSCRIBING; screenshot(argv[1],"04f-transcribing",REVIEW);
     s.mode = CP_REVIEW; strcpy(s.view.draft_state, "ready");
     strcpy(s.view.draft, "请帮我检查这个项目的代码，找出问题，并运行测试。");
     screenshot(argv[1], "05-confirm", REVIEW);
@@ -174,6 +214,11 @@ int main(int argc, char **argv) {
     assert(strstr(lv_label_get_text(s_body),"123456"));
     assert(!lv_obj_has_flag(s_scroll,LV_OBJ_FLAG_HIDDEN));
     preview_passkey=-1;
+    strcpy(s.alert_title,"测试任务"); strcpy(s.alert_kind,"completed"); s.alert_until=2000000;
+    screenshot(argv[1],"08-completed",HOME);
+    assert(strstr(lv_label_get_text(s_status),"已完成"));
+    strcpy(s.alert_kind,"attention"); screenshot(argv[1],"09-attention",THREADS);
+    s.alert_until=0; render(); assert(!strstr(lv_label_get_text(s_status),"测试任务"));
     // Long transcript reflows and repeated page swaps must fit the same pool.
     for (int i = 0; i < 200; ++i) {
         s_page = REVIEW; s.mode = CP_REVIEW;

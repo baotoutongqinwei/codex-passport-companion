@@ -7,7 +7,7 @@ typedef struct {
     int64_t epoch;
 } cp_config_t;
 
-typedef enum { CP_IDLE, CP_STARTING, CP_RECORDING, CP_TRANSCRIBING, CP_REVIEW, CP_SENDING } cp_mode_t;
+typedef enum { CP_IDLE, CP_STARTING, CP_READY, CP_RECORDING, CP_FINISHING, CP_TRANSCRIBING, CP_REVIEW, CP_SENDING } cp_mode_t;
 
 typedef struct {
     cp_view_t view;
@@ -15,6 +15,9 @@ typedef struct {
     int battery;
     cp_mode_t mode;
     unsigned recorded_ms;
+    unsigned input_level;
+    char alert_id[17], alert_title[100], alert_kind[16];
+    int64_t alert_until;
     char message[180];
 } cp_state_t;
 
@@ -28,4 +31,5 @@ void cp_record_start(void);
 void cp_record_stop(void);
 void cp_send_draft(void);
 void cp_cancel(void);
+bool cp_mark_read(const char *thread, const char *revision);
 void cp_ui_run(void);

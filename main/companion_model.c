@@ -82,3 +82,28 @@ void cp_date_text(char out[17], int64_t unix_seconds) {
     struct tm date;
     if (!gmtime_r(&shifted, &date) || !strftime(out, 17, "%Y-%m-%d %H:%M", &date)) strcpy(out, "--");
 }
+
+unsigned cp_pcm_level(const int16_t *samples, size_t count) {
+    if (!count || count > 2048) return 0;
+    int32_t sum = 0;
+    for (size_t i = 0; i < count; ++i) sum += samples[i];
+    int32_t mean = sum / (int32_t)count;
+    uint32_t amplitude = 0;
+    for (size_t i = 0; i < count; ++i) {
+        int32_t delta = (int32_t)samples[i] - mean;
+        amplitude += (uint32_t)(delta < 0 ? -delta : delta);
+    }
+    amplitude /= count;
+    static const unsigned thresholds[] = {32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384};
+    unsigned level = 0;
+    for (unsigned i = 0; i < 10; ++i) if (amplitude >= thresholds[i]) level = (i+1)*10;
+    return level;
+}
+
+int16_t cp_cue_sample(unsigned sample, unsigned count, unsigned frequency) {
+    static const int16_t sine[] = {0, 627, 1159, 1514, 1638, 1514, 1159, 627,
+                                   0, -627, -1159, -1514, -1638, -1514, -1159, -627};
+    if (sample >= count || !frequency || frequency > 2000) return 0;
+    unsigned fade = sample < 160 ? sample : count-1-sample < 160 ? count-1-sample : 160;
+    return (int16_t)(sine[(sample*frequency/1000)%16] * (int)fade / 160);
+}

@@ -22,8 +22,8 @@
 static const char *TAG = "companion";
 static cp_state_t s_state;
 static cp_view_t s_incoming;
-static SemaphoreHandle_t s_lock, s_capture;
-static QueueHandle_t s_commands;
+static SemaphoreHandle_t s_lock;
+static QueueHandle_t s_commands, s_audio_jobs;
 static StreamBufferHandle_t s_pcm;
 static char s_response[8193];
 static char s_thread[CP_ID_SIZE], s_cursor[CP_CURSOR_SIZE];
@@ -32,8 +32,9 @@ static unsigned s_selection_version;
 static bool s_force, s_stop, s_capture_done = true, s_capture_error;
 static bool s_audio_ready;
 
-typedef enum { CMD_RECORD, CMD_SEND, CMD_CANCEL } command_kind_t;
-typedef struct { command_kind_t kind; char thread[CP_ID_SIZE]; } command_t;
+typedef enum { CMD_RECORD, CMD_SEND, CMD_CANCEL, CMD_READ } command_kind_t;
+typedef struct { command_kind_t kind; char thread[CP_ID_SIZE], revision[33]; } command_t;
+typedef struct { bool capture, cue; unsigned frequency; } audio_job_t;
 
 static void lock(void) { xSemaphoreTake(s_lock, portMAX_DELAY); }
 static void unlock(void) { xSemaphoreGive(s_lock); }
@@ -68,6 +69,8 @@ void cp_record_start(void) {
     s_stop = false; s_capture_error = false;
     s_state.mode = CP_STARTING;
     s_state.recorded_ms = 0;
+    s_state.input_level = 0;
+    s_state.alert_until = 0;
     s_state.message[0] = 0;
     unlock();
     if (xQueueSend(s_commands, &command, 0) != pdTRUE) {
@@ -76,7 +79,17 @@ void cp_record_start(void) {
 }
 
 void cp_record_stop(void) {
-    lock(); s_stop = true; unlock();
+    lock();
+    s_stop = true;
+    if (s_state.mode == CP_RECORDING) s_state.mode = CP_FINISHING;
+    unlock();
+}
+
+bool cp_mark_read(const char *thread, const char *revision) {
+    command_t command = {.kind=CMD_READ};
+    cp_utf8_copy(command.thread, sizeof(command.thread), thread);
+    cp_utf8_copy(command.revision, sizeof(command.revision), revision);
+    return xQueueSend(s_commands, &command, 0) == pdTRUE;
 }
 
 void cp_send_draft(void) {
@@ -118,7 +131,7 @@ static cJSON *request(const char *path, const void *body, int length, bool audio
     return json;
 }
 
-static cJSON *action(const char *kind, const char *key, const char *value, int chunks) {
+static cJSON *action(const char *kind, const char *key, const char *value, int chunks, const char *revision) {
     char id[33];
     snprintf(id, sizeof(id), "%08lx%08lx%08lx%08lx", (unsigned long)esp_random(),
              (unsigned long)esp_random(), (unsigned long)esp_random(), (unsigned long)esp_random());
@@ -128,6 +141,7 @@ static cJSON *action(const char *kind, const char *key, const char *value, int c
     cJSON_AddStringToObject(json, "request_id", id);
     if (key) cJSON_AddStringToObject(json, key, value);
     if (chunks >= 0) cJSON_AddNumberToObject(json, "chunks", chunks);
+    if (revision) cJSON_AddStringToObject(json, "revision", revision);
     char *text = cJSON_PrintUnformatted(json);
     cJSON_Delete(json);
     if (!text) return NULL;
@@ -181,12 +195,18 @@ static void poll_state(void) {
         string(item, "title", t->title, sizeof(t->title));
         string(item, "project", t->project, sizeof(t->project));
         string(item, "status", t->status, sizeof(t->status));
+        t->unread = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "unread"));
+        t->queued = number(item, "queued", 0);
+        if (t->queued < 0 || t->queued > 32) t->queued = 0;
     }
     string(json, "next", s_incoming.next, sizeof(s_incoming.next));
     string(json, "id", s_incoming.id, sizeof(s_incoming.id));
     string(json, "title", s_incoming.title, sizeof(s_incoming.title));
     string(json, "body", s_incoming.body, sizeof(s_incoming.body));
     string(json, "status", s_incoming.status, sizeof(s_incoming.status));
+    string(json, "revision", s_incoming.revision, sizeof(s_incoming.revision));
+    s_incoming.p1 = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "p1"));
+    s_incoming.unread = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "unread"));
     s_incoming.page = number(json, "page", 0);
     s_incoming.pages = number(json, "pages", 1);
     s_incoming.asr_ready = cp_transport_audio_ready() && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "asr"));
@@ -213,8 +233,22 @@ static void poll_state(void) {
     string(draft, "thread_id", s_incoming.draft_thread, sizeof(s_incoming.draft_thread));
     string(draft, "state", s_incoming.draft_state, sizeof(s_incoming.draft_state));
     string(draft, "text", s_incoming.draft, sizeof(s_incoming.draft));
+    cJSON *alert = cJSON_GetObjectItemCaseSensitive(json, "alert");
+    char alert_id[17], alert_title[100], alert_kind[16];
+    string(alert, "id", alert_id, sizeof(alert_id));
+    string(alert, "title", alert_title, sizeof(alert_title));
+    string(alert, "kind", alert_kind, sizeof(alert_kind));
+    bool sound = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(alert, "sound"));
     cJSON_Delete(json);
     lock();
+    if (alert_id[0] && strcmp(alert_id, s_state.alert_id) && s_state.mode == CP_IDLE) {
+        strcpy(s_state.alert_id, alert_id); strcpy(s_state.alert_title, alert_title);
+        strcpy(s_state.alert_kind, alert_kind); s_state.alert_until = esp_timer_get_time()+6000000;
+        if (sound && s_audio_ready) {
+            audio_job_t job = {.frequency = !strcmp(alert_kind, "attention") ? 440 : 660};
+            xQueueSend(s_audio_jobs, &job, 0);
+        }
+    }
     if (version == s_selection_version) {
         s_state.view = s_incoming;
         if (s_state.mode == CP_IDLE && s_incoming.draft_id[0]) {
@@ -238,7 +272,28 @@ static void capture_task(void *arg) {
     (void)arg;
     int16_t samples[512];
     for (;;) {
-        xSemaphoreTake(s_capture, portMAX_DELAY);
+        audio_job_t job;
+        xQueueReceive(s_audio_jobs, &job, portMAX_DELAY);
+        cp_mode_t expected = job.capture ? CP_READY : CP_IDLE;
+        if (job.capture) { lock(); s_state.mode = CP_READY; unlock(); }
+        if (job.cue || !job.capture) {
+            // The same worker owns playback and capture: alerts cannot play over speech.
+            for (unsigned start = 0; start < 1920; start += 160) {
+                lock(); bool allowed = s_state.mode == expected && (!job.capture || !s_stop); unlock();
+                if (!allowed) break;
+                for (unsigned n = 0; n < 160; ++n)
+                    samples[n] = cp_cue_sample(start+n, 1920, job.capture ? 880 : job.frequency);
+                if (bsp_audio_write(samples, 320) != ESP_OK) break;
+            }
+        }
+        if (!job.capture) continue;
+        // Give READY a visible interval, then drain pre-start audio, including
+        // any cue. Even a silent start can follow an earlier notification.
+        vTaskDelay(pdMS_TO_TICKS(150));
+        for (int i = 0; i < 6; ++i) {
+            if (bsp_audio_read(samples, sizeof(samples)) != ESP_OK) break;
+        }
+        lock(); if (!s_stop) s_state.mode = CP_RECORDING; unlock();
         size_t bytes = 0;
         for (;;) {
             lock(); bool stop = s_stop; unlock();
@@ -250,9 +305,16 @@ static void capture_task(void *arg) {
                 lock(); s_capture_error = true; unlock(); break;
             }
             bytes += count;
-            lock(); s_state.recorded_ms = (unsigned)(bytes*1000U/32000U); unlock();
+            unsigned level = cp_pcm_level(samples, count/2);
+            lock();
+            s_state.recorded_ms = (unsigned)(bytes*1000U/32000U);
+            unsigned old = s_state.input_level;
+            s_state.input_level = level > old ? (old*2+level*3)/5 : (old*4+level)/5;
+            unlock();
         }
-        lock(); s_capture_done = true; unlock();
+        lock(); s_capture_done = true; s_state.input_level = 0;
+        if (s_state.mode == CP_RECORDING || s_state.mode == CP_READY) s_state.mode = CP_FINISHING;
+        unlock();
     }
 }
 
@@ -279,25 +341,31 @@ static void network_task(void *arg) {
             if (command.kind == CMD_CANCEL) {
                 cancel_pending = true;
                 lock(); s_stop = true; unlock();
+            } else if (command.kind == CMD_READ) {
+                if (wifi) cJSON_Delete(action("mark_read", "thread_id", command.thread, -1, command.revision));
             } else if (command.kind == CMD_RECORD) {
-                cJSON *reply = wifi ? action("record_start", "thread_id", command.thread, -1) : NULL;
+                cJSON *reply = wifi ? action("record_start", "thread_id", command.thread, -1, NULL) : NULL;
                 if (reply) string(reply, "record_id", record_id, sizeof(record_id));
+                bool cue = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(reply, "cue"));
                 cJSON_Delete(reply);
                 if (record_id[0]) {
                     xStreamBufferReset(s_pcm);
                     seq = 0;
-                    lock(); s_capture_done = false; s_capture_error = false; s_state.mode = CP_RECORDING; unlock();
-                    xSemaphoreGive(s_capture);
+                    lock(); s_capture_done = false; s_capture_error = false; unlock();
+                    audio_job_t job = {.capture=true, .cue=cue};
+                    if (xQueueSend(s_audio_jobs, &job, 0) != pdTRUE) {
+                        lock(); s_capture_done = true; s_capture_error = true; unlock();
+                    }
                     ESP_LOGI(TAG, "record heap=%lu largest=%lu", (unsigned long)esp_get_free_heap_size(),
                              (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
                 } else { lock(); s_state.mode = CP_IDLE; unlock(); }
             } else if (command.kind == CMD_SEND) {
                 char draft[CP_ID_SIZE];
                 lock(); strcpy(draft, s_state.view.draft_id); s_state.mode = CP_SENDING; unlock();
-                cJSON *reply = action("send", "draft_id", draft, -1);
+                cJSON *reply = action("send", "draft_id", draft, -1, NULL);
                 if (reply) {
                     cJSON_Delete(reply);
-                    cJSON_Delete(action("cancel", NULL, NULL, -1));
+                    cJSON_Delete(action("cancel", NULL, NULL, -1, NULL));
                     lock(); s_state.mode = CP_IDLE; s_page = -1; s_force = true; unlock();
                 } else {
                     lock(); s_state.mode = CP_REVIEW; unlock();
@@ -307,7 +375,7 @@ static void network_task(void *arg) {
         }
         lock(); done = s_capture_done; failed = s_capture_error; unlock();
         if (cancel_pending && done) {
-            if (wifi) cJSON_Delete(action("cancel", NULL, NULL, -1));
+            if (wifi) cJSON_Delete(action("cancel", NULL, NULL, -1, NULL));
             xStreamBufferReset(s_pcm);
             record_id[0] = 0; cancel_pending = false;
             lock(); s_state.mode = CP_IDLE; s_state.view.draft_id[0] = 0; s_force = true; unlock();
@@ -331,9 +399,11 @@ static void network_task(void *arg) {
                     else ++seq;
                     cJSON_Delete(reply);
                 } else if (done) {
-                    cJSON *reply = action("record_finish", "record_id", record_id, seq);
+                    // Releasing during preparation is cancellation, not an ASR error.
+                    if (!seq) { cancel_pending = true; continue; }
+                    cJSON *reply = action("record_finish", "record_id", record_id, seq, NULL);
                     lock(); s_state.mode = reply ? CP_TRANSCRIBING : CP_IDLE; s_force = true; unlock();
-                    if (!reply) cJSON_Delete(action("cancel", NULL, NULL, -1));
+                    if (!reply) cJSON_Delete(action("cancel", NULL, NULL, -1, NULL));
                     cJSON_Delete(reply);
                     record_id[0] = 0;
                 }
@@ -357,10 +427,10 @@ static void network_task(void *arg) {
 
 void cp_runtime_start(const cp_config_t *config) {
     s_lock = xSemaphoreCreateMutex();
-    s_capture = xSemaphoreCreateBinary();
+    s_audio_jobs = xQueueCreate(2, sizeof(audio_job_t));
     s_commands = xQueueCreate(4, sizeof(command_t));
     s_pcm = xStreamBufferCreate(8192, 1024);
-    ESP_ERROR_CHECK(s_lock && s_capture && s_commands && s_pcm ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(s_lock && s_audio_jobs && s_commands && s_pcm ? ESP_OK : ESP_ERR_NO_MEM);
     s_state.battery = -1;
     s_state.view.remaining[0] = s_state.view.remaining[1] = -1;
 #if CONFIG_PASSPORT_MODE_WIFI
@@ -371,6 +441,7 @@ void cp_runtime_start(const cp_config_t *config) {
 #endif
     s_state.battery=bsp_battery_soc();
     s_audio_ready=bsp_audio_init()==ESP_OK && bsp_audio_set_format(16000,16,1)==ESP_OK;
+    if (s_audio_ready) bsp_audio_set_volume(30);
     esp_err_t result=cp_transport_start(config);
     if (result!=ESP_OK) { message("通信初始化失败，请重启设备"); return; }
     if (xTaskCreate(capture_task, "cp_audio", 4096, NULL, 6, NULL) != pdPASS ||

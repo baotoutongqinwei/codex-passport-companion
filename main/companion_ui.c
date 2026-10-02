@@ -21,9 +21,12 @@ static cp_mode_t s_previous_mode;
 static int s_choice;
 static char s_thread[CP_ID_SIZE], s_cursor[CP_CURSOR_SIZE];
 static lv_obj_t *s_screen, *s_title, *s_status, *s_battery, *s_footer, *s_clock;
-static lv_obj_t *s_rows[4], *s_row_text[4], *s_bar, *s_quota;
+static lv_obj_t *s_rows[4], *s_row_text[4], *s_row_status[4], *s_bar, *s_quota;
 static lv_obj_t *s_auto_title, *s_auto_date, *s_reset_title, *s_reset_dates[2];
 static lv_obj_t *s_scroll, *s_body;
+static lv_obj_t *s_meter, *s_level_text;
+static char s_read_thread[CP_ID_SIZE], s_read_revision[33], s_last_alert[17];
+static int64_t s_read_at;
 static bool s_dark;
 static int64_t s_last_key, s_ignore_until;
 
@@ -77,6 +80,8 @@ static void create_ui(void) {
         lv_obj_remove_flag(s_rows[i], LV_OBJ_FLAG_SCROLLABLE);
         s_row_text[i] = label(s_rows[i], 9, 8, 198, 0xFFFFFF);
         lv_label_set_long_mode(s_row_text[i], LV_LABEL_LONG_DOT);
+        s_row_status[i] = label(s_rows[i], 9, 27, 198, 0xAFBCCD);
+        lv_label_set_long_mode(s_row_status[i], LV_LABEL_LONG_DOT);
     }
     s_quota = label(s_screen, 18, 100, 204, 0xFFFFFF);
     s_bar = lv_bar_create(s_screen);
@@ -99,6 +104,11 @@ static void create_ui(void) {
     lv_obj_set_style_pad_all(s_scroll, 0, 0);
     lv_obj_set_scroll_dir(s_scroll, LV_DIR_VER);
     s_body = label(s_scroll, 0, 0, 204, 0xF1F5FA);
+    s_meter = lv_bar_create(s_screen);
+    lv_obj_set_pos(s_meter, 24, 212); lv_obj_set_size(s_meter, 192, 10);
+    lv_obj_set_style_bg_color(s_meter, lv_color_hex(0x263848), 0);
+    lv_obj_set_style_bg_color(s_meter, lv_color_hex(0x55E6B0), LV_PART_INDICATOR);
+    s_level_text = label(s_screen, 24, 232, 192, 0xAFBCCD);
     s_footer = label(s_screen, 24, 271, 192, 0xAFBCCD);
     lv_obj_set_style_text_line_space(s_footer, 0, 0);
     lv_obj_set_style_text_font(s_footer, &passport_font_16, 0);
@@ -124,10 +134,18 @@ static void render(void) {
     const char *status = !s.configured ? "等待 USB 配置" : !s.wifi ? connecting :
                          !s.bridge ? "等待 Mac 桥接服务" : "已连接 Mac";
     text(s_status, s.message[0] ? s.message : status);
+    lv_obj_set_style_text_color(s_status, lv_color_hex(0xAFBCCD), 0);
+    lv_obj_set_style_text_color(s_title, lv_color_hex(0xFFFFFF), 0);
     for (int i = 0; i < 4; ++i) {
         visible(s_rows[i], s_page == MENU || (s_page == THREADS && i < s.view.count));
         lv_obj_set_style_bg_color(s_rows[i], lv_color_hex(i == s_choice ? 0x2F6156 : 0x1B2A38), 0);
+        lv_obj_set_y(s_rows[i], 94+i*(s_page == THREADS ? 56 : 43));
+        lv_obj_set_height(s_rows[i], s_page == THREADS ? 52 : 39);
+        lv_obj_set_y(s_row_text[i], s_page == THREADS ? 3 : 8);
+        visible(s_row_status[i], s_page == THREADS);
     }
+    visible(s_meter, s_page == RECORD);
+    visible(s_level_text, s_page == RECORD);
     visible(s_quota, s_page == HOME);
     visible(s_bar, s_page == HOME);
     visible(s_auto_title, s_page == HOME);
@@ -169,7 +187,22 @@ static void render(void) {
         text(s_footer, "中键对话 / 长按下连接");
     } else if (s_page == THREADS) {
         text(s_title, s.view.count ? "选择对话" : "暂无可用对话");
-        for (int i = 0; i < s.view.count; ++i) text(s_row_text[i], s.view.threads[i].title);
+        for (int i = 0; i < s.view.count; ++i) {
+            cp_thread_t *thread = &s.view.threads[i];
+            text(s_row_text[i], thread->title);
+            const char *state = !strcmp(thread->status, "active") ? "处理中" :
+                !strcmp(thread->status, "needsDesktop") ? "需电脑处理" :
+                !strcmp(thread->status, "error") ? "执行出错" :
+                !strcmp(thread->status, "idle") ? "可继续" : "状态未知";
+            char queued[24] = "";
+            if (thread->queued) snprintf(queued, sizeof(queued), " 待%d条", thread->queued);
+            snprintf(value, sizeof(value), "%s%s%s", thread->unread ? "未读 " : "", state, queued);
+            text(s_row_status[i], value);
+            lv_obj_set_style_text_color(s_row_status[i], lv_color_hex(
+                !strcmp(thread->status,"needsDesktop") || !strcmp(thread->status,"error") ? 0xFFC46B :
+                thread->unread ? 0x55E6B0 : 0xAFBCCD), 0);
+        }
+        if (!s.message[0] && s.bridge) text(s_status, s.view.p1 ? "最近交互 / 卡片未读" : "更新 Mac 程序以显示状态");
         text(s_footer, "上下选择 / 中键打开\n长按下翻页 / 长按上返回");
     } else if (s_page == MENU) {
         static const char *items[] = {"最新回复", "切换对话", "额度概览", "返回对话"};
@@ -180,16 +213,27 @@ static void render(void) {
         bool matched = strcmp(s.view.id, s_thread) == 0;
         text(s_title, matched ? s.view.title : "正在打开对话");
         if (!s.message[0] && s.bridge) text(s_status, matched ? run_status(s.view.status) : "正在同步");
+        if (matched && !s.message[0] && !strcmp(s.view.status,"idle"))
+            text(s_status, s.view.asr_ready ? "麦克风就绪 / 长按中键" : "请在 Mac 准备语音模型");
         text(s_body, matched ? s.view.body : "请稍候");
         snprintf(value, sizeof(value), "%d/%d 页 | 中键菜单\n长按中键说话，松开识别", matched ? s.view.page+1 : 0, matched ? s.view.pages : 0);
         text(s_footer, value);
     } else if (s_page == RECORD) {
-        text(s_title, s.mode == CP_STARTING ? "准备录音" : "正在聆听");
-        snprintf(value, sizeof(value), "\n\n%u / 45 秒\n\n松开中键结束\n识别后确认发送", s.recorded_ms/1000);
+        bool recording = s.mode == CP_RECORDING;
+        text(s_title, s.mode == CP_STARTING ? "准备录音" : s.mode == CP_READY ? "麦克风已就绪" :
+             s.mode == CP_FINISHING ? "正在传输录音" : "正在录音");
+        lv_obj_set_style_text_color(s_title, lv_color_hex(recording || s.mode == CP_READY ? 0x55E6B0 : 0xFFC46B), 0);
+        snprintf(value, sizeof(value), "\n%u / 45 秒\n\n%s", s.recorded_ms/1000,
+                 recording ? "现在说话，松开结束" : s.mode == CP_READY ? "即将开始，请保持按住" :
+                 s.mode == CP_FINISHING ? "已停止采集，请稍候" : "连接确认中，请稍候");
         text(s_body, value);
-        text(s_footer, "请靠近卡片麦克风");
+        lv_bar_set_value(s_meter, recording ? (int)s.input_level : 0, LV_ANIM_OFF);
+        text(s_level_text, recording ? (s.input_level > 90 ? "声音偏大，请稍远一些" :
+             s.input_level < 20 ? "音量较低，请靠近麦克风" : "已检测到声音") : "音量指示");
+        text(s_footer, "识别后预览 / 确认再发送");
     } else if (s_page == REVIEW) {
         text(s_title, s.mode == CP_TRANSCRIBING ? "本机识别中" : s.mode == CP_SENDING ? "正在发送" : "确认语音内容");
+        lv_obj_set_style_text_color(s_title, lv_color_hex(s.mode == CP_REVIEW ? 0x55E6B0 : 0xFFC46B), 0);
         text(s_body, s.mode == CP_TRANSCRIBING ? "正在 Mac 离线识别\n请稍候，不会自动发送" : s.view.draft);
         bool ready = strcmp(s.view.draft_state, "ready") == 0;
         text(s_footer, s.mode == CP_SENDING ? "正在等待 Mac 确认\n请勿重复发送" : ready ? "中键发送 / 上下滚动\n长按上取消" : "长按上取消并返回");
@@ -198,6 +242,11 @@ static void render(void) {
         text(s_body, cp_transport_help());
         text(s_footer, "中键返回额度页\n一分钟无操作自动熄屏");
     }
+    if (s.mode == CP_IDLE && s.alert_until > esp_timer_get_time() && !s.message[0]) {
+        snprintf(value, sizeof(value), "%s：%s", !strcmp(s.alert_kind,"attention") ? "需处理" : "已完成", s.alert_title);
+        text(s_status, value);
+        lv_obj_set_style_text_color(s_status, lv_color_hex(!strcmp(s.alert_kind,"attention") ? 0xFFC46B : 0x55E6B0), 0);
+    }
     int passkey=cp_transport_passkey();
     if (passkey>=0) {
         for (int i=0;i<4;++i) visible(s_rows[i],false);
@@ -205,6 +254,7 @@ static void render(void) {
         visible(s_auto_title,false); visible(s_auto_date,false); visible(s_reset_title,false);
         for (int i=0;i<2;++i) visible(s_reset_dates[i],false);
         visible(s_scroll,true);
+        visible(s_meter,false); visible(s_level_text,false);
         lv_obj_set_y(s_footer,271);
         text(s_title,"蓝牙安全配对"); text(s_status,"在 Mac 输入以下配对码");
         snprintf(value,sizeof(value),"\n\n     %06d\n\n仅在自己的 Mac 确认",passkey);
@@ -215,6 +265,18 @@ static void render(void) {
 static void open_threads(void) {
     s_cursor[0] = 0; s_choice = 0; s_page = THREADS;
     cp_select(s_thread, s_cursor, -1);
+}
+
+static void read_latest(void) {
+    if (s_page != CHAT || s.mode != CP_IDLE || !s.bridge || !s.view.p1 || !s.view.unread || s_dark ||
+        cp_transport_passkey() >= 0 ||
+        strcmp(s.view.id, s_thread) || s.view.page != s.view.pages-1 || !s.view.revision[0]) return;
+    int64_t now = esp_timer_get_time();
+    if (!strcmp(s_read_thread, s_thread) && !strcmp(s_read_revision, s.view.revision) && now-s_read_at < 5000000) return;
+    if (cp_mark_read(s_thread, s.view.revision)) {
+        strcpy(s_read_thread, s_thread); strcpy(s_read_revision, s.view.revision);
+        s_read_at = now;
+    }
 }
 
 static void handle(cp_key_t key) {
@@ -285,14 +347,27 @@ void cp_ui_run(void) {
     s_last_key = esp_timer_get_time();
     int64_t rendered = 0;
     for (;;) {
+        char selected[CP_ID_SIZE] = "";
+        if (s_page == THREADS && s_choice < s.view.count) strcpy(selected, s.view.threads[s_choice].id);
         cp_state_snapshot(&s);
+        if (selected[0]) {
+            s_choice = 0;
+            for (int i = 0; i < s.view.count; ++i) if (!strcmp(selected, s.view.threads[i].id)) s_choice = i;
+        }
         int64_t now = esp_timer_get_time();
+        if (s.mode == CP_IDLE && s.alert_until > now && strcmp(s_last_alert,s.alert_id)) {
+            strcpy(s_last_alert,s.alert_id);
+            if (s_dark) { s_dark=false; s_last_key=now-54000000; bsp_display_backlight(75); }
+        }
         if (cp_transport_passkey()>=0) {
             s_last_key=now;
             if (s_dark) { s_dark=false; bsp_display_backlight(75); }
         }
         if (s.mode != s_previous_mode) {
-            if (s.mode == CP_STARTING || s.mode == CP_RECORDING) s_page = RECORD;
+            // Render short preparation/ready phases immediately, even when the
+            // normal page refresh interval has not elapsed yet.
+            rendered = 0;
+            if (s.mode == CP_STARTING || s.mode == CP_READY || s.mode == CP_RECORDING || s.mode == CP_FINISHING) s_page = RECORD;
             else if (s.mode != CP_IDLE) {
                 s_page = REVIEW;
                 if (s.view.draft_thread[0]) cp_utf8_copy(s_thread, sizeof(s_thread), s.view.draft_thread);
@@ -303,7 +378,8 @@ void cp_ui_run(void) {
         if (bsp_lvgl_lock(50)) {
             cp_key_t key;
             while (xQueueReceive(s_keys, &key, 0) == pdTRUE) handle(key);
-            if (now-rendered > 250000) { render(); rendered = now; }
+            int64_t interval = s.mode == CP_RECORDING ? 100000 : 250000;
+            if (now-rendered > interval) { render(); read_latest(); rendered = now; }
             bsp_lvgl_unlock();
         }
         if (!s_dark && s.mode == CP_IDLE && now-s_last_key > 60000000) { bsp_display_backlight(0); s_dark = true; }

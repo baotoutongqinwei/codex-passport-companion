@@ -26,6 +26,14 @@ do not claim installation succeeded. Having all five available does not mean
 loading or invoking all five for every task: use only the matching skills, and
 retain the separate authorization requirements for flashing, Git writes, and publishing.
 
+## Companion update history
+
+For this fork's Codex companion, append the next numbered batch to
+[`docs/codex-updates.md`](docs/codex-updates.md) and its Chinese counterpart after
+each completed update, before delivery or commit. Follow that document's format,
+keep prior entries, and refresh the README summary and affected screenshots.
+This application log is separate from the upstream release changelog.
+
 ## Project and safety baseline
 
 - Target: ESP32-C3, 8 MB Flash, no PSRAM, ESP-IDF 5.5.3.

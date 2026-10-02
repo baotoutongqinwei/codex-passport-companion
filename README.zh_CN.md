@@ -2,24 +2,65 @@
 
 # Codex 随行助手
 
+<p align="center"><img src="assets/images/codex-passport-icon.png" width="96" alt="Codex 随行助手薄荷绿卡片图标"></p>
+
 基于 [FoloToy AI Passport](https://gitee.com/FoloToy/ai-passport) 的随身 Codex 助手：
 在 240 × 320 卡片上确认语音输入、切换对话、查看回复与周额度。
 Codex 和本地语音识别运行在 Mac 上，卡片负责显示、录音和按键交互。
 另外提供无需电脑的离线时钟、番茄钟、秒表固件。
 
 这是基于 FoloToy 完整项目开发的社区应用，并非 OpenAI 或 FoloToy 官方产品。
-应用位于 `feature/codex-companion` 分支，保留上游历史和可复用 BSP。
+默认应用分支为 `feature/codex-companion`，本次 P1 与桌面优化位于 `feature/codex-p1`，
+保留上游历史和可复用 BSP。
+
+## 界面预览
+
+### Mac 桌面端
+
+原生连接主页、本地语音识别和免打扰设置，外观跟随 macOS 浅色／深色模式。
+
+<p align="center"><img src="assets/images/codex/desktop-connection-dark.png" width="860" alt="卡片已连接的原生 Mac 主页"></p>
+
+| 本地语音模型 · 深色 | 提醒设置 · 浅色 |
+| --- | --- |
+| <img src="assets/images/codex/desktop-voice-dark.png" width="430" alt="深色本机语音模型页面"> | <img src="assets/images/codex/desktop-alerts-light.png" width="430" alt="浅色提醒开关与免打扰时段页面"> |
+
+### 卡片端
+
+| 周额度与重置时间 | 最近对话与状态 | 录音与音量反馈 | 任务完成提醒 |
+| --- | --- | --- | --- |
+| <img src="assets/images/codex/card-01-quota.png" width="200" alt="周额度和重置时间"> | <img src="assets/images/codex/card-02-threads.png" width="200" alt="对话状态和未读标记"> | <img src="assets/images/codex/card-04-record.png" width="200" alt="录音时长和麦克风音量"> | <img src="assets/images/codex/card-08-completed.png" width="200" alt="任务完成横幅提醒"> |
+
+| 独立离线时钟 | 番茄钟 | 秒表 |
+| --- | --- | --- |
+| <img src="assets/images/codex/card-12-offline-clock.png" width="200" alt="独立离线时钟"> | <img src="assets/images/codex/card-13-offline-focus.png" width="200" alt="离线番茄钟"> | <img src="assets/images/codex/card-14-offline-stopwatch.png" width="200" alt="离线秒表"> |
+
+Mac 深色截图来自正式打包应用，浅色设置截图使用隔离的示例配置。
+卡片图片为**真实 LVGL 界面在 240 × 320 分辨率下的示例数据渲染**，不是真机照片或硬件验收证据。
+界面使用简体中文。[图片来源与复现方法](assets/images/codex/README.zh_CN.md)。
+
+## 最近更新
+
+| 批次 · 日期 | 更新内容 | 升级方式 |
+| --- | --- | --- |
+| 003 · 2026-10-02 | 连续编号更新记录和本页图集 | 仅文档 |
+| 002 · 2026-10-02 | 桌面 0.3.1、三页布局、深浅外观与应用图标 | 替换 Mac 应用；外观更新无需烧录 |
+| 001 · 2026-10-02 | 录音反馈、对话状态与未读、免打扰任务提醒 | 同时更新 Mac 程序和匹配的卡片固件 |
+
+[完整更新记录与测试结果](docs/codex-updates.zh_CN.md)。下载区产物可能落后于本分支，
+卡片端 P1 功能仍待真机验收。
 
 ## 功能
 
 | 功能 | 行为 |
 | --- | --- |
 | 语音 | 按住中键录音，最长 45 秒；松开后查看简体识别结果，确认再发送。Whisper base 与 OpenCC 均在 Mac 本机运行。 |
-| 对话 | 浏览最近的 Codex 对话、切换语音目标、翻阅回复、跳到最新消息。 |
+| 对话 | 每页三条，按真实交互时间排序，展示处理中／排队／需电脑处理／未读状态；切换语音目标并查看回复。 |
 | 忙碌对话 | 接口支持时将确认的消息加入原对话队列；发送结果不确定时不自动重试。 |
 | 额度 | 一页显示 7 天剩余额度、自动重置时间、最早到期的两次可用重置机会；不会使用重置机会。 |
 | 时钟 | 左上角 UTC+8、24 小时制，从连接的 Mac 校时。 |
-| Mac 窗口 | 双击启动、账户/模型检查、USB/蓝牙选择、按需下载或复用模型。 |
+| Mac 窗口 | 原生三页布局、深浅外观、原创图标、账户／模型检查、USB／蓝牙选择、模型复用。 |
+| 反馈与提醒 | 录音阶段和音量指示，完成／需处理横幅，可选声音与 UTC+8 免打扰时段；需要 P1 固件。 |
 | 恢复 | 自动重连原 USB/蓝牙设备，在程序运行期间保留草稿和请求去重，丢弃中断录音。 |
 
 软件不增加付费识别或 API 服务，但仍需可用的 Codex 登录账户及其额度，
@@ -59,7 +100,8 @@ ESP32-C3 配有 8 MB Flash、没有 PSRAM，不能独立运行 Codex 或语音�
 
 ## 从源码构建
 
-克隆本仓库默认的应用分支。使用 AI 开发时，先阅读 `AGENTS.md`、`docs/README.md`；
+克隆需要构建的应用分支（以上更新位于 `feature/codex-p1`）。
+使用 AI 开发时，先阅读 `AGENTS.md`、`docs/README.md`；
 项目要求的技能位于 `skills/`。复用已有检出目录时保留本地修改。
 
 固件环境按[环境指南](docs/development/engineering/environment-setup.zh_CN.md)安装并激活
@@ -97,10 +139,10 @@ bash tools/build_desktop.sh
 
 | 项目 | 已有记录 |
 | --- | --- |
-| 构建 | 完整蓝牙门禁、合并镜像/调试归档校验、原生 Mac 应用通过；其他固件模式有此前构建记录。 |
-| 主机测试 | 54 项助手测试及仓库/BSP 检查通过，覆盖回执丢失、防重复、队列、协议、字体覆盖、模型校验。 |
-| 真机测试 | USB 语音/回复往返、此前蓝牙程序下的 45 秒录音、原生 Mac 蓝牙状态同步和一次卡片断电自动恢复通过。 |
-| 未验证 | 新 Mac 安装/权限、Intel 支持、原生窗口 USB 真机、长时间休眠唤醒、重复无线干扰、新窗口下 45 秒真实录音。 |
+| 构建 | 四种 P1 固件、合并镜像／调试归档、原生 Mac 应用通过；桌面 0.3.1 图标、签名和 ZIP 校验通过。 |
+| 主机测试 | 68 项助手 Python 测试及仓库／BSP／模型检查通过；真实 LVGL 导航／渲染和原生 Mac 页面／设置检查通过。 |
+| 真机测试 | 桌面 0.3.1 蓝牙状态同步和切页通过；此前已测 USB 语音／回复、蓝牙 45 秒录音及一次卡片断电重连。 |
+| 未验证 | P1 新增卡片音效、音量显示与提醒亮屏；新 Mac 安装、Intel、原生窗口 USB、长时间休眠唤醒和重复无线干扰；桌面 0.3.1 未复测语音。 |
 
 当前不提供 Intel、Windows、Linux 桌面安装包。Codex 实验性 app-server 队列及额度字段
 可能随版本改变，不同账户或版本不保证具有全部功能。草稿和去重保存在内存中，退出前

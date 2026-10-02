@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define CP_THREAD_COUNT 4
+#define CP_THREAD_COUNT 3
 #define CP_ID_SIZE 65
 #define CP_BODY_SIZE 1804
 #define CP_CURSOR_SIZE 385
@@ -13,6 +13,8 @@ typedef struct {
     char title[100];
     char project[64];
     char status[24];
+    bool unread;
+    int queued;
 } cp_thread_t;
 
 typedef struct {
@@ -37,6 +39,9 @@ typedef struct {
     char draft_state[24];
     char draft[CP_BODY_SIZE];
     bool asr_ready;
+    bool p1;
+    bool unread;
+    char revision[33];
 } cp_view_t;
 
 // Copies whole UTF-8 sequences only, replacing malformed bytes with '?'.
@@ -51,3 +56,7 @@ void cp_clock_text(char out[9], int64_t unix_seconds, bool synced);
 int cp_weekly_window(const cp_view_t *view);
 // Fixed UTC+8 calendar date and 24-hour time, or "--" if unavailable.
 void cp_date_text(char out[17], int64_t unix_seconds);
+// Relative microphone activity, not a calibrated sound-pressure reading.
+unsigned cp_pcm_level(const int16_t *samples, size_t count);
+// Quiet synthesized cue with a short fade, 16 kHz mono. No audio asset allocation.
+int16_t cp_cue_sample(unsigned sample, unsigned count, unsigned frequency);

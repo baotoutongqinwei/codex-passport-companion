@@ -17,6 +17,7 @@ except ImportError:
 
 from rpc import RpcError
 from local_data import voice_paths
+from activity import Activity, load_alerts, reply_revision, thread_status
 
 PAGE_CHARS = 360
 MAX_RECORD_BYTES = 16000 * 2 * 45
@@ -131,6 +132,9 @@ class Companion:
         self.last_error = ""
         self.account = {}
         self.send_lock = threading.Lock()
+        self.activity = Activity(load_alerts(self.root))
+        self.watched = OrderedDict()
+        self.watch_index = 0
 
     def notify(self, method, params):
         with self.lock:
@@ -141,19 +145,22 @@ class Companion:
             elif ident:
                 state = self.live.setdefault(ident, {})
                 if method == "turn/started":
-                    state.update(status="active", output="", turn_id=(params.get("turn") or {}).get("id"))
+                    state.update(status="active", output="", handoff=False, turn_id=(params.get("turn") or {}).get("id"))
                     self.history.pop(ident, None)
                 elif method == "item/agentMessage/delta":
                     state["output"] = (state.get("output", "") + params.get("delta", ""))[-24000:]
                 elif method == "turn/completed":
-                    if state.get("status") != "needsDesktop":
+                    if not state.get("handoff"):
                         state["status"] = "idle"
                     self.history.pop(ident, None)
                 elif method == "thread/status/changed":
-                    if state.get("status") != "needsDesktop":
-                        state["status"] = (params.get("status") or {}).get("type", "unknown")
+                    if not state.get("handoff"):
+                        state["status"] = thread_status({"status": params.get("status")})
+                    self.history.pop(ident, None)
                 elif method == "passport/needsDesktop":
                     state["status"] = "needsDesktop"
+                    state["handoff"] = True
+                    self.history.pop(ident, None)
                 elif method == "error":
                     state["status"] = "error"
                 # Prevent unbounded subscriptions from growing the companion.
@@ -167,38 +174,87 @@ class Companion:
             self.limits_at = time.monotonic()
         return self.limits
 
+    def _thread(self, ident):
+        with self.lock:
+            cached = self.history.get(ident)
+        if not cached or time.monotonic() - cached[0] > 5:
+            raw = self.rpc.call("thread/read", {"threadId": ident, "includeTurns": True})["thread"]
+            turns = raw.get("turns") or []
+            last = turns[-1] if turns else {}
+            with self.lock:
+                live = self.live.get(ident, {})
+                # Fresh reads also see desktop-owned turns, whose notifications may
+                # not reach this RPC client. Never retain an old idle/active flag.
+                if live.get("handoff") and last.get("id") != live.get("turn_id"):
+                    live["handoff"] = False
+                live["status"] = "needsDesktop" if live.get("handoff") else thread_status(raw)
+                exclude = live.get("turn_id") if live.get("status") == "active" and live.get("turn_id") == last.get("id") else None
+            # Bound retained history; never cache whole Codex rollouts.
+            raw = {"name": display_text(raw.get("name") or raw.get("preview") or "未命名对话", 28),
+                   "status": raw.get("status"), "_revision": reply_revision(raw),
+                   "_body": extract_messages(raw, exclude),
+                   "turns": [{k: last.get(k) for k in ("id", "status", "completedAt")}] if last else []}
+            with self.lock:
+                if len(self.history) >= 16 and ident not in self.history:
+                    self.history.pop(next(iter(self.history)))
+                self.history[ident] = (time.monotonic(), raw)
+        else:
+            raw = cached[1]
+        with self.lock:
+            live = dict(self.live.get(ident, {}))
+            last = (raw.get("turns") or [{}])[-1]
+            if live.get("turn_id") != last.get("id"):
+                live.pop("output", None)
+            status = live.get("status", thread_status(raw))
+            title = display_text(raw.get("name") or raw.get("preview") or "未命名对话", 28)
+            suppressed = bool(self.recording or (self.draft and self.draft["state"] == "transcribing"))
+            observed = dict(self.activity.observe(ident, raw, title, status, suppressed=suppressed))
+        return raw, live, observed, title, status
+
     def state(self, ident="", cursor="", page=0):
         with self.lock:
             self._expire_recording()
-        result = self.rpc.call("thread/list", {"limit": 4, "cursor": cursor or None,
-                                               "sortKey": "updated_at", "modelProviders": []})
-        threads = []
+            if ident:
+                self.watched[ident] = None
+                self.watched.move_to_end(ident)
+                while len(self.watched) > 8:
+                    self.watched.popitem(last=False)
+        result = self.rpc.call("thread/list", {"limit": 3, "cursor": cursor or None,
+                                               "sortKey": "recency_at", "modelProviders": []})
+        threads, snapshots = [], {}
         for thread in result.get("data", []):
-            threads.append({"id": thread["id"],
-                            "title": display_text(thread.get("name") or thread.get("preview") or "未命名对话", 28),
+            key = thread["id"]
+            try:
+                snapshots[key] = self._thread(key)
+                _, _, observed, title, status = snapshots[key]
+            except RpcError:
+                # A stale/deleted list row must not prevent other conversations opening.
+                observed, status = {}, "unknown"
+                title = display_text(thread.get("name") or thread.get("preview") or "未命名对话", 28)
+            threads.append({"id": key, "title": title,
                             "project": display_text(Path(thread.get("cwd") or "/").name, 20),
-                            "status": (thread.get("status") or {}).get("type", "unknown")})
+                            "status": status, "unread": observed.get("unread", False),
+                            "queued": self._pending_queue_count(key)})
+        # Keep the last eight opened targets observable after the user changes pages.
+        with self.lock:
+            others = [key for key in self.watched if key not in snapshots and key != ident]
+            if others:
+                key = others[self.watch_index % len(others)]
+                self.watch_index += 1
+        if others:
+            try:
+                self._thread(key)
+            except RpcError:
+                pass
         view = {"threads": threads, "next": result.get("nextCursor") or "", "title": "",
                 "id": ident, "body": "", "status": "idle", "page": 0, "pages": 1,
                 "quota": self.refresh_limits(), "draft": {}, "asr": self.asr_ready()}
         if ident:
-            cached = self.history.get(ident)
-            if not cached or time.monotonic() - cached[0] > 3:
-                thread = self.rpc.call("thread/read", {"threadId": ident, "includeTurns": True})["thread"]
-                with self.lock:
-                    live = self.live.get(ident, {})
-                    exclude = live.get("turn_id") if live.get("status") == "active" else None
-                cached = (time.monotonic(), thread.get("name") or thread.get("preview") or "对话",
-                          extract_messages(thread, exclude), (thread.get("status") or {}).get("type", "unknown"))
-                if len(self.history) >= 8:
-                    self.history.pop(next(iter(self.history)))
-                self.history[ident] = cached
-            with self.lock:
-                live = dict(self.live.get(ident, {}))
-            body = cached[2]
+            raw, live, observed, title, status = snapshots.get(ident) or self._thread(ident)
+            body = raw["_body"]
             if live.get("output") and live.get("status") == "active":
                 body += "\n\nCodex\n" + live["output"]
-            if live.get("status") == "needsDesktop":
+            if status == "needsDesktop":
                 body += "\n\n此操作需要电脑权限，卡片未授权。请在电脑继续。"
             queued_count = self._pending_queue_count(ident)
             if queued_count:
@@ -206,12 +262,13 @@ class Companion:
             content = paginate(body or "暂无消息")
             pages = len(content)
             page = pages - 1 if page < 0 else min(page, pages - 1)
-            view.update(title=display_text(cached[1], 28), status=live.get("status", cached[3]),
-                        body=content[page],
+            view.update(title=title, status=status, body=content[page], revision=observed["revision"], unread=observed["unread"],
                         pages=pages, page=page)
         with self.lock:
             if self.draft:
                 view["draft"] = {k: self.draft[k] for k in ("id", "thread_id", "state", "text")}
+            view["alert"] = self.activity.notice(suppressed=bool(self.recording or self.draft))
+            view["p1"] = True
         # Timestamp after RPC work; preserve fractions so repeated syncs do not
         # reset the card clock to the beginning of each second.
         view["now"] = time.time()
@@ -229,6 +286,7 @@ class Companion:
         # Abandon incomplete PCM, but retain confirmations and action deduplication.
         # A send may have reached Codex even when its USB response was lost.
         with self.lock:
+            self.activity.suppress()
             if self.recording:
                 self.recording["path"].unlink(missing_ok=True)
                 self.recording = None
@@ -281,6 +339,12 @@ class Companion:
 
     def _action(self, data):
         action = data.get("action")
+        if action == "mark_read":
+            if not all(isinstance(data.get(k), str) for k in ("thread_id", "revision")):
+                raise ClientError("已读标识格式错误")
+            with self.lock:
+                self.activity.mark_read(data.get("thread_id", ""), data.get("revision", ""))
+            return {"ok": True}
         if action == "record_start":
             ident = data.get("thread_id", "")
             if not ident:
@@ -298,7 +362,8 @@ class Companion:
                 self.recording = {"id": record_id, "thread_id": ident, "path": path,
                                   "seq": 0, "digest": None, "size": 0, "last": time.monotonic()}
                 self.draft = None
-                return {"record_id": record_id}
+                self.activity.suppress()
+                return {"record_id": record_id, "cue": self.activity.sound_allowed()}
         if action == "record_finish":
             with self.lock:
                 rec = self.recording
@@ -308,6 +373,7 @@ class Companion:
                     raise ClientError("录音不完整或过短")
                 self.draft = {"id": rec["id"], "thread_id": rec["thread_id"], "state": "transcribing", "text": ""}
                 self.recording = None
+                self.activity.suppress()
                 self.executor.submit(self._transcribe, rec)
                 return {"draft_id": rec["id"]}
         if action == "cancel":

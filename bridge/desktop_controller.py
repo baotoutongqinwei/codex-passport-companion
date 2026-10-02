@@ -5,6 +5,7 @@ from local_data import InstanceLock, voice_paths, install_model, use_model
 from rpc import Codex, RpcError, codex_binary
 from service import Companion, ClientError
 from transports import run
+from activity import load_alerts, save_alerts
 
 
 class DesktopController:
@@ -17,6 +18,7 @@ class DesktopController:
         self.stop = threading.Event()
         self.closing = False
         self.closed = False
+        self.alert_settings = load_alerts(root)
         self.view = {"codex": "等待自检", "account": "等待自检", "voice": "等待自检",
                      "connection": "尚未连接", "state": "idle", "busy": False,
                      "state_success": 0, "reconnects": 0,
@@ -32,6 +34,16 @@ class DesktopController:
         result["voice"] = self.voice_status() if not result.get("model_busy") else result["voice"]
         result["pending"] = self.pending()
         return result
+
+    def set_alerts(self, settings):
+        settings = save_alerts(self.root, settings)
+        with self.lock:
+            self.alert_settings = settings
+            if self.service:
+                with self.service.lock:
+                    self.service.activity.settings = settings
+                    self.service.activity.suppress()
+        self.update(detail="提醒设置已保存，免打扰使用 UTC+8；录音期间不播放声音。")
 
     def voice_status(self):
         engine, model = voice_paths(self.root)
@@ -65,7 +77,9 @@ class DesktopController:
                 service.close()
                 self.owner.release()
                 raise
-            self.service = service
+            with self.lock:
+                service.activity.settings = self.alert_settings
+                self.service = service
         account = self.service.rpc.call("account/read").get("account") or {}
         if account.get("type") != "chatgpt":
             self.update(account="请先在 Codex 桌面应用中登录 ChatGPT 账户")

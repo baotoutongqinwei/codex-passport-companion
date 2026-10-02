@@ -4,6 +4,28 @@
 #include <string.h>
 
 int main(void) {
+    int16_t samples[512] = {0};
+    assert(cp_pcm_level(samples, 0) == 0 && cp_pcm_level(samples, 512) == 0);
+    for (unsigned i=0;i<512;++i) samples[i]=20000;
+    assert(cp_pcm_level(samples, 512) == 0); // DC offset is not speech activity.
+    unsigned previous = 0;
+    for (int amplitude=32;amplitude<=16384;amplitude*=2) {
+        for (unsigned i=0;i<512;++i) samples[i]=i%2 ? amplitude : -amplitude;
+        unsigned level=cp_pcm_level(samples, 512);
+        assert(level >= previous && level <= 100); previous=level;
+    }
+    assert(previous == 100);
+    for (unsigned i=0;i<512;++i) samples[i]=i%2 ? INT16_MAX : INT16_MIN;
+    assert(cp_pcm_level(samples, 512) == 100);
+    assert(cp_cue_sample(0,1920,880)==0 && cp_cue_sample(1919,1920,880)==0);
+    assert(cp_cue_sample(1920,1920,880)==0);
+    bool audible=false;
+    for (unsigned i=0;i<1920;++i) {
+        int sample=cp_cue_sample(i,1920,880);
+        assert(sample>=-1638 && sample<=1638);
+        audible=audible || sample!=0;
+    }
+    assert(audible);
     char out[32];
     assert(cp_utf8_copy(out, 5, "中中文") == 3 && strcmp(out, "中") == 0);
     assert(cp_utf8_copy(out, 7, "中中文") == 6 && strcmp(out, "中中") == 0);

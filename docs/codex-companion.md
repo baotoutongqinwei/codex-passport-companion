@@ -15,8 +15,8 @@ features below apply to the three companion profiles, not the offline tools.
 | --- | --- |
 | Clock | Top-left on every page, fixed UTC+8, 24-hour `HH:MM:SS`, updated every second. Synced from the Mac's Unix time, independent of its display timezone. Until the first successful sync after boot: `--:--:--`. After a disconnect, the local clock continues; idle screen-off behavior is unchanged. |
 | Quota | One fixed screen: 7-day remaining percentage, next automatic reset, and the earliest two available reset-opportunity expiry dates. All dates use UTC+8 and 24-hour time. No long-term quota or monetary credit balance is shown. Unknown/missing details stay explicit. Refresh every 30 seconds; quota events invalidate the cache. Reset opportunities are read only, never consumed by the card. |
-| Conversations | Four recent local Codex conversations per page; select and page through messages, jump to the latest reply. This is not a ChatGPT cloud chat client. |
-| Replies | Bridge polls every 1.5 seconds; history cache lasts 3 seconds. Turns started through the bridge also receive text delta events. Long replies are paginated. |
+| Conversations | Three local Codex conversations per page, sorted by actual interaction recency, with status, tracked pending counts and card unread markers. Select and page through messages, jump to the latest reply. This is not a ChatGPT cloud chat client. |
+| Replies | Bridge polls every 1.5 seconds; history cache lasts 5 seconds. Turns started through the bridge also receive text delta events. Long replies are paginated. |
 | Voice | Hold the middle button, release to finish, review text, then click to send. Up to 45 seconds, 16 kHz mono PCM; buffer on the card is 8 KB. Recognition defaults to Chinese; local conversion normalizes the preview and sent text to Simplified Chinese. |
 | Cost | No hosted transcription, API-key login, purchase or paid fallback. Only the signed-in ChatGPT account and its available quota are used. Unknown/exhausted quota and other providers block sends. Existing subscription terms still apply. |
 | Busy conversations | If the thread is active or another client owns its writer, add confirmed text to the original thread's Codex queue. Additional recordings can be confirmed into the same queue. The helper tracks up to 32 pending voice messages per session across conversations, showing the selected conversation's pending count. Queue acceptance does not mean execution; check the desktop app. |
@@ -47,7 +47,15 @@ desktop. Do not expect approval prompts to be mirrored automatically.
 For a packaged Mac window and first-run checks, see the [desktop guide](codex-desktop.md).
 The [prioritized improvement list](codex-improvements.md) tracks subsequent work.
 
-Desktop update, 2026-10-02: a native ARM64 Mac app now provides account/model
+P1 update, 2026-10-02: recording phases and a relative level meter, three conversation rows
+sorted by actual interaction, card unread markers, and completion/attention alerts with mute
+and quiet hours are implemented. See the [desktop guide](codex-desktop.md#recording-conversations-and-alerts)
+for use and observation limits. The 68 companion host tests, actual LVGL layout and 200 page
+switches passed (6,048 bytes free in the 32 KB pool), as did read-only local Codex integration
+and Mac settings-window checks. P1 has not been flashed; the historical device results below
+do not establish acceptance of this new version.
+
+Earlier P0 desktop update, 2026-10-02: a native ARM64 Mac app now provides account/model
 checks, USB/BLE controls and on-demand verified model installation or reuse.
 BLE reconnect keeps the original device, service, drafts and deduplication.
 The 54 companion host tests and full BLE validation gate passed. The packaged
@@ -133,7 +141,7 @@ The complete gate includes the baseline tests plus bounded UTF-8/URL handling,
 font coverage, pagination, recording sequence/expiry/cancellation, frozen voice
 target, quota restrictions, duplicate-send protection and a real local TLS
 round trip. The preview compiles the real UI against LVGL with a 32 KB allocator
-and saves fourteen PPM frames under `build/ui-preview/images/`. It is not hardware
+and saves quota, conversation, recording-phase and alert PPM frames under `build/ui-preview/images/`. It is not hardware
 acceptance. The firmware gate creates the merged image for offset `0x0` and a
 matching ELF/MAP archive. Flashing replaces the current application and may
 reset saved data; obtain explicit approval first.

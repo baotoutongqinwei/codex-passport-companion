@@ -206,7 +206,7 @@ LICENSE                  仓库许可证
 | [Wi-Fi 配网](development/engineering/wifi-provisioning.zh_CN.md) | 蓝牙配网实现参考与配套小程序 |
 | [社区作品与经验](reference/README.zh_CN.md) | `docs/reference/<username>/` 下的应用档案和可复用知识 |
 | [参与贡献](contribution/README.zh_CN.md) | 文档、提交与 Pull Request 约定 |
-| [Codex 助手](codex-companion.zh_CN.md) · [Mac 应用](codex-desktop.zh_CN.md) · [优化清单](codex-improvements.zh_CN.md) | 本分支助手、桌面配置与优先级计划 |
+| [Codex 助手](codex-companion.zh_CN.md) · [Mac 应用](codex-desktop.zh_CN.md) · [优化清单](codex-improvements.zh_CN.md) · [更新记录](codex-updates.zh_CN.md) | 本分支助手、桌面配置、优先级计划和连续编号更新历史 |
 | [品牌素材](brand/README.zh_CN.md) | 产品视觉参考与[品牌说明](brand/brand-and-product.zh_CN.md) |
 | [Fork 指南](fork-guide.zh_CN.md) · [更新记录](CHANGELOG.zh_CN.md) | 下游工作流与版本历史 |
 
