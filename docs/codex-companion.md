@@ -52,8 +52,10 @@ sorted by actual interaction, card unread markers, and completion/attention aler
 and quiet hours are implemented. See the [desktop guide](codex-desktop.md#recording-conversations-and-alerts)
 for use and observation limits. The 68 companion host tests, actual LVGL layout and 200 page
 switches passed (6,048 bytes free in the 32 KB pool), as did read-only local Codex integration
-and Mac settings-window checks. P1 has not been flashed; the historical device results below
-do not establish acceptance of this new version.
+and Mac settings-window checks. P1 was subsequently flashed and the user confirmed that
+the meter and recognition work. Batch 006 replaces amplitude-dependent hints with a stable
+listening message; that new firmware still needs device acceptance. See the
+[numbered updates](codex-updates.md) for current results and remaining checks.
 
 Earlier P0 desktop update, 2026-10-02: a native ARM64 Mac app now provides account/model
 checks, USB/BLE controls and on-demand verified model installation or reuse.

@@ -228,8 +228,8 @@ static void render(void) {
                  s.mode == CP_FINISHING ? "已停止采集，请稍候" : "连接确认中，请稍候");
         text(s_body, value);
         lv_bar_set_value(s_meter, recording ? (int)s.input_level : 0, LV_ANIM_OFF);
-        text(s_level_text, recording ? (s.input_level > 90 ? "声音偏大，请稍远一些" :
-             s.input_level < 20 ? "音量较低，请靠近麦克风" : "已检测到声音") : "音量指示");
+        // Amplitude alone cannot distinguish a pause from quiet speech.
+        text(s_level_text, recording ? "正在聆听" : "音量指示");
         text(s_footer, "识别后预览 / 确认再发送");
     } else if (s_page == REVIEW) {
         text(s_title, s.mode == CP_TRANSCRIBING ? "本机识别中" : s.mode == CP_SENDING ? "正在发送" : "确认语音内容");

@@ -7,6 +7,7 @@ esp_err_t cp_transport_start(const cp_config_t *config);
 bool cp_transport_connected(void);
 void cp_transport_poll(void);
 bool cp_transport_audio_ready(void);
+bool cp_transport_rssi(int *dbm); // Physical transports only; false for USB.
 // Only the runtime worker calls request; implementations own framing and I/O.
 bool cp_transport_request(const char *path, const void *body, size_t size,
                           bool audio, char *out, size_t capacity, int *status);

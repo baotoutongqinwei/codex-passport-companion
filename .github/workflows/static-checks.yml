@@ -30,6 +30,6 @@ jobs:
       - name: Validate repository and run host tests
         run: |
           python3 -m venv .local/ci-venv
-          .local/ci-venv/bin/python -m pip install -r bridge/requirements.txt
+          .local/ci-venv/bin/python -m pip install -r bridge/requirements.txt -r bridge/flash-requirements.txt
           source .local/ci-venv/bin/activate
           ./tools/validate.sh --static

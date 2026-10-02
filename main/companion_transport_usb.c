@@ -1,4 +1,5 @@
 #include "companion_transport.h"
+bool cp_transport_rssi(int *dbm) { (void)dbm; return false; }
 #include "driver/usb_serial_jtag.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

@@ -19,7 +19,7 @@ BSP are retained; the earlier feature branches remain available.
 
 ### On your Mac
 
-Native connection dashboard, local voice recognition and quiet-hours settings.
+Native connection dashboard, local voice recognition, quiet-hours settings and USB firmware flashing.
 The app follows the macOS light/dark appearance.
 
 <p align="center"><img src="assets/images/codex/desktop-connection-dark.png" width="860" alt="Native Mac connection dashboard with the card connected"></p>
@@ -27,6 +27,19 @@ The app follows the macOS light/dark appearance.
 | Local voice model · dark | Alert settings · light |
 | --- | --- |
 | <img src="assets/images/codex/desktop-voice-dark.png" width="430" alt="Local voice model page in dark appearance"> | <img src="assets/images/codex/desktop-alerts-light.png" width="430" alt="Alert switches and quiet hours in light appearance"> |
+
+USB firmware flashing in desktop 0.4.0; the device shown here is an isolated preview fixture.
+
+<p align="center"><img src="assets/images/codex/desktop-flasher-dark.png" width="860" alt="USB firmware flashing with bundled profiles and configuration preservation"></p>
+
+### Device information
+
+Desktop 0.5.0 adds local hardware monitoring and firmware comparison. These
+native previews use fictional readings; they are not hardware measurements.
+
+| Device overview | Hardware details |
+| --- | --- |
+| <img src="assets/images/codex/desktop-device-dark.png" width="430" alt="Device resource usage and firmware comparison"> | <img src="assets/images/codex/desktop-device-details-dark.png" width="430" alt="Hardware, storage entries, radio and task details"> |
 
 ### On your card
 
@@ -38,8 +51,8 @@ The app follows the macOS light/dark appearance.
 | --- | --- | --- |
 | <img src="assets/images/codex/card-12-offline-clock.png" width="200" alt="Independent offline clock"> | <img src="assets/images/codex/card-13-offline-focus.png" width="200" alt="Offline Pomodoro timer"> | <img src="assets/images/codex/card-14-offline-stopwatch.png" width="200" alt="Offline stopwatch"> |
 
-Mac dark screenshots show the packaged app; the light settings screenshot uses
-isolated sample preferences. Card images are **real LVGL renders at 240 × 320 with
+Mac connection/voice dark screenshots show the packaged app; the light settings and firmware-page screenshots use
+isolated sample data. Card images are **real LVGL renders at 240 × 320 with
 sample data**, not device photographs or hardware acceptance evidence. UI text is
 Simplified Chinese. [Capture sources and reproduction](assets/images/codex/README.md).
 
@@ -47,13 +60,18 @@ Simplified Chinese. [Capture sources and reproduction](assets/images/codex/READM
 
 | Batch · date | Changes | Upgrade |
 | --- | --- | --- |
+| 008 · 2026-10-02 | Consolidate batches 005–007 and BLE 0.5.0 device evidence into local `master` | Source/documentation only |
+| 007 · 2026-10-02 | Desktop/firmware 0.5.0: hardware information, local USB/BLE monitoring and firmware comparison | Replace Mac app and flash the matching card firmware |
+| 006 · 2026-10-02 | Stable listening hint; pauses no longer trigger a low-volume warning | Flash the updated companion firmware; Mac app unchanged |
+| 005 · 2026-10-02 | Desktop 0.4.0: four bundled profiles, USB flashing, pairing/configuration preservation by default | Replace Mac app for the entry point; each device write needs confirmation |
 | 004 · 2026-10-02 | Integrated the updates into `master` and made it the default branch | Source/documentation only |
 | 003 · 2026-10-02 | Numbered update history and this screenshot gallery | Documentation only |
 | 002 · 2026-10-02 | Desktop 0.3.1, three-page layout, light/dark appearance and app icon | Replace Mac app; no flashing for appearance |
 | 001 · 2026-10-02 | Recording feedback, conversation status/unread, quiet task alerts | Update Mac helper and matching card firmware |
 
 [Full update record and test results](docs/codex-updates.md). Release downloads
-may lag behind this branch; P1 card features still await hardware acceptance.
+may lag behind this branch; the P1 meter and recognition have user confirmation,
+while the new recording hint and remaining alerts still await hardware acceptance.
 
 ## Features
 
@@ -64,7 +82,9 @@ may lag behind this branch; P1 card features still await hardware acceptance.
 | Busy threads | Confirmed messages enter the original thread's queue when supported; uncertain sends are never automatically retried. |
 | Quota | One page with 7-day remaining quota, automatic reset time and the earliest two available reset-opportunity expiry dates. No reset is consumed. |
 | Clock | Top-left UTC+8, 24-hour time; synced from the connected Mac. |
-| Mac window | Native three-page app, light/dark appearance, original icon, account/model checks, USB/BLE choice and model reuse. |
+| Mac window | Native five-page app, light/dark appearance, original icon, account/model checks, USB/BLE choice and model reuse. |
+| Device information | Local USB/BLE monitoring: hardware, heap/application/NVS use, battery/voltage, die temperature, uptime, RSSI and task/stack data; compare current firmware with selected/bundled builds and open the upgrade entry point. Requires 0.5.0 app and firmware. |
+| Firmware flashing | Four bundled profiles or a local merged `.bin`; USB device selection, version/hash display, configuration preservation by default, confirmed writes, progress and local logs. |
 | Feedback and alerts | Recording phases and microphone level; completion/action-needed banners, optional sounds and UTC+8 quiet hours. Requires P1 firmware. |
 | Recovery | Reconnect the original USB/BLE device, preserve ready drafts and request dedupe in the running helper, discard interrupted recordings. |
 
@@ -92,10 +112,11 @@ it does not run Codex or a speech model by itself.
    and a matching BLE or USB firmware. Use an Apple Silicon Mac with macOS 15+.
    The app is ad-hoc signed, not Apple notarized; a new Mac may require its normal
    security verification or administrator approval.
-2. Flash the selected **merged full image at `0x0`** using the
-   [firmware instructions](docs/development/engineering/firmware-layout.md).
-   Flashing can replace stored settings. A card already running this companion
-   does not need reflashing just to update the Mac application.
+2. Open the app's firmware page, choose a bundled profile or local merged image, connect USB
+   and scan the card. Preservation is enabled by default; first-time installations may need
+   an explicitly confirmed configuration reset. Review the device and impact before writing.
+   See the [desktop flashing guide](docs/codex-desktop.md#flash-firmware-from-the-window).
+   An existing card does not need reflashing just to update the Mac application.
 3. Install Codex and sign into your existing ChatGPT account. Extract and open
    `Codex Passport.app`; running it requires no Python, ESP-IDF or terminal.
 4. Select an existing `ggml-base.bin`, or download the optional roughly 142 MB
@@ -152,10 +173,10 @@ curl and a C/C++ compiler. Source builds and downloads need additional disk spac
 
 | Area | Recorded result |
 | --- | --- |
-| Build | Four P1 firmware profiles, merged-image/debug-archive verification and native Mac bundle passed; desktop 0.3.1 icon, signature and ZIP checks passed. |
-| Host tests | 68 companion Python tests plus repository/BSP/model checks passed. Actual LVGL navigation/rendering and native Mac page/settings checks passed. |
-| Device tests | Desktop 0.3.1 BLE state sync and page switching passed. Earlier results include USB voice/reply, BLE 45-second audio and one card power-cycle recovery. |
-| Unverified | New P1 card cues, level display and alert wake-up; clean-Mac installation, Intel, native-window USB, long sleep/wake and repeated radio interference. Voice was not repeated for desktop 0.3.1. |
+| Build | Batch 007: all four 0.5.0 firmware gates, merged-image/ELF archives, ARM64 desktop bundle, bundled tools/firmware, signature and ZIP checks passed. |
+| Host tests | 87 companion Python tests and C/BSP/repository gates passed; monitoring data, version comparisons, image validation, preservation boundaries and desktop interlocks covered. Native Chinese device-page layout checked with labeled sample data. |
+| Device tests | BLE 0.5.0 flashed through the packaged desktop while preserving configuration. All three segments verified; 20-second startup observation, BLE reconnection, state synchronization, live readings and build-identity comparison passed. Earlier confirmed results include P1 meter/recognition, USB voice/reply, BLE 45-second audio and card power-cycle recovery. |
+| Unverified | Card versus desktop battery comparison, sensor accuracy, sustained monitoring/recording headroom, batch 006 listening hint and GUI flashing failure recovery; P1 sound/alert wake-up, clean-Mac installation, Intel and long-duration tests. |
 
 Intel/Windows/Linux desktop bundles are not supplied. Codex's experimental
 app-server queue and quota fields can change between versions; an unsupported

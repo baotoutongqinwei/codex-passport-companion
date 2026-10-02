@@ -135,6 +135,16 @@ class Companion:
         self.activity = Activity(load_alerts(self.root))
         self.watched = OrderedDict()
         self.watch_index = 0
+        self.device = None
+        self.device_at = None
+
+    def device_report(self, data):
+        from device_info import normalize
+        value = normalize(data)
+        with self.lock:
+            self.device = value
+            self.device_at = time.monotonic()
+        return {"ok": True}
 
     def notify(self, method, params):
         with self.lock:

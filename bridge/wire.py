@@ -97,6 +97,8 @@ def dispatch(service, frame):
         value = lambda key, default="": query.get(key, [default])[0]
         if url.path == "/v1/state" and not data:
             result = service.state(value("thread"), value("cursor"), int(value("page", "-1")))
+        elif url.path == "/v1/device":
+            result = service.device_report(json.loads(data))
         elif url.path == "/v1/action":
             action = json.loads(data)
             if not isinstance(action, dict):

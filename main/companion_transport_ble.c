@@ -147,6 +147,12 @@ esp_err_t cp_transport_start(const cp_config_t *config) {
     return xTaskCreate(host_task,"cp_ble",4096,NULL,5,NULL)==pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
 bool cp_transport_connected(void) { return s_secure && s_subscribed; }
+bool cp_transport_rssi(int *dbm) {
+    int8_t value;
+    if (!cp_transport_connected() || ble_gap_conn_rssi(s_connection, &value) != 0 || value == 127) return false;
+    *dbm = value;
+    return true;
+}
 void cp_transport_poll(void) {}
 bool cp_transport_audio_ready(void) { return cp_transport_connected() && ble_att_mtu(s_connection)>=128; }
 int cp_transport_passkey(void) { return s_passkey; }

@@ -6,6 +6,7 @@ if [[ ! -x "$python" ]]; then
     echo "Install bridge/desktop-requirements.txt in a Python virtual environment first." >&2
     exit 1
 fi
+"$python" tools/prepare_desktop_firmware.py
 "$python" -m PyInstaller --noconfirm --clean --distpath build/desktop --workpath build/desktop-work bridge/desktop.spec
 codesign --verify --deep --strict "build/desktop/Codex Passport.app"
 echo 'Desktop app: build/desktop/Codex Passport.app'

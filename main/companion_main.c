@@ -1,4 +1,5 @@
 #include "companion.h"
+#include "companion_build.h"
 #include "bsp_i2c.h"
 #include "bsp_display.h"
 #include "bsp_battery.h"
@@ -11,8 +12,10 @@
 #if CONFIG_PASSPORT_MODE_OFFLINE
 void cp_offline_run(void);
 #endif
+const char cp_firmware_identity[] = CP_FIRMWARE_ID;
 
 void app_main(void) {
+    ESP_LOGI("companion", "Firmware %s", cp_firmware_identity);
     // Do not erase existing NVS when initialization fails.
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(bsp_i2c_init());

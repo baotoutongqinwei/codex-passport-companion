@@ -1,6 +1,7 @@
 #include "companion.h"
 #include "companion_transport.h"
 #include "companion_adpcm.h"
+#include "companion_device.h"
 #include "sdkconfig.h"
 #include "bsp_audio.h"
 #include "bsp_battery.h"
@@ -327,6 +328,9 @@ static void network_task(void *arg) {
     uint8_t compressed[1030];
 #endif
     int64_t last_poll = 0, last_battery = 0;
+#if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
+    int64_t next_device = 0;
+#endif
     bool cancel_pending = false;
     for (;;) {
         int64_t now = esp_timer_get_time();
@@ -334,6 +338,9 @@ static void network_task(void *arg) {
         bool wifi=cp_transport_connected();
         lock(); s_state.wifi=wifi; bool done=s_capture_done; bool failed=s_capture_error; unlock();
         if (!wifi) {
+#if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
+            next_device = 0;
+#endif
             if (record_id[0]) { lock(); s_stop = true; s_capture_error = true; unlock(); cancel_pending = true; }
         }
         command_t command;
@@ -411,6 +418,20 @@ static void network_task(void *arg) {
         } else if (wifi) {
             lock(); bool force = s_force; s_force = false; unlock();
             if (force || now - last_poll > 1500000) { poll_state(); last_poll = esp_timer_get_time(); }
+#if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
+            lock(); bool idle = s_state.mode == CP_IDLE; unlock();
+            if (idle && now >= next_device && uxQueueMessagesWaiting(s_commands) == 0) {
+                char device[1536];
+                int status = 0;
+                if (cp_device_json(device, sizeof(device))) {
+                    // Local USB/authenticated BLE only; never sent over Wi-Fi.
+                    // Old helpers may reject this optional endpoint without UI errors.
+                    cp_transport_request("/v1/device", device, strlen(device), false,
+                                         s_response, sizeof(s_response), &status);
+                }
+                next_device = esp_timer_get_time() + (status == 200 ? 5000000 : 60000000);
+            }
+#endif
         }
         if (now - last_battery > 30000000) {
             int battery = bsp_battery_soc();

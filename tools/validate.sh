@@ -38,6 +38,8 @@ run_static_checks() {
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_transports.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_desktop.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_activity.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_firmware.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_device.py
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_companion_offline.c main/companion_offline_model.c -o "${test_dir}/test_companion_offline"
     "${test_dir}/test_companion_offline"
