@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from rpc import Codex, RpcError
 from service import ClientError, Companion, display_text
-from local_data import InstanceLock
+from local_data import InstanceLock, data_root
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / ".local"
@@ -113,6 +113,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(parsed, dict):
                     raise ClientError("请求格式错误")
                 result = self.server.service.action(parsed)
+            elif url.path == "/v1/battery":
+                result = self.server.service.battery_report(json.loads(data))
             elif url.path.startswith("/v1/audio/"):
                 query = parse_qs(url.query, max_num_fields=1)
                 seq = int(query.get("seq", ["-1"])[0])
@@ -145,10 +147,11 @@ def create_server(service, token, host, port, cert, key):
 
 def doctor():
     rpc = Codex()
-    service = Companion(rpc, LOCAL)
+    service = Companion(rpc, data_root())
     rpc.notify = service.notify
     try:
         rpc.start()
+        service.refresh_limits(force=True)  # Doctor explicitly verifies quota availability.
         state = service.state()
         print(json.dumps({"codex": "PASS", "visible_threads": len(state["threads"]),
                           "has_more_threads": bool(state["next"]), "quota": "PASS",
@@ -217,14 +220,16 @@ def main():
                 print(f"{device.address}  {device.name or 'CodexCard'}")
         else:
             rpc = Codex()
-            service = Companion(rpc, LOCAL)
+            service = Companion(rpc, data_root())
             rpc.notify = service.notify
             server = None
             owner = InstanceLock()
             try:
                 owner.acquire()
                 rpc.start()
-                service.refresh_limits(force=True)
+                if (rpc.call("account/read").get("account") or {}).get("type") != "chatgpt":
+                    raise ClientError("请先在 Codex 登录 ChatGPT 账户")
+                service.quota_snapshot()
                 if args.command in ("usb", "ble"):
                     from transports import run
                     run(service, args.command, args.port if args.command == "usb" else args.address)

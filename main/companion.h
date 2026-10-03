@@ -7,12 +7,9 @@ typedef struct {
     int64_t epoch;
 } cp_config_t;
 
-typedef enum { CP_IDLE, CP_STARTING, CP_READY, CP_RECORDING, CP_FINISHING, CP_TRANSCRIBING, CP_REVIEW, CP_SENDING } cp_mode_t;
-
 typedef struct {
     cp_view_t view;
     bool configured, wifi, bridge, clock_synced;
-    int battery;
     cp_mode_t mode;
     unsigned recorded_ms;
     unsigned input_level;

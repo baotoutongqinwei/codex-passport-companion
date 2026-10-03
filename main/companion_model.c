@@ -7,6 +7,14 @@
 #include <stdio.h>
 #include <time.h>
 
+bool cp_telemetry_allowed(cp_mode_t mode) {
+    return mode == CP_IDLE || mode == CP_REVIEW || mode == CP_TRANSCRIBING;
+}
+
+bool cp_screen_should_dim(cp_mode_t mode, int64_t inactive_us) {
+    return (mode == CP_IDLE || mode == CP_REVIEW) && inactive_us >= 60000000;
+}
+
 size_t cp_utf8_copy(char *out, size_t capacity, const char *text) {
     if (!capacity) return 0;
     size_t used = 0;

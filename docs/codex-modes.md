@@ -2,7 +2,7 @@
 
 # Choose a Codex card mode
 
-All sources live in the same application checkout on `feature/codex-companion`.
+All sources live in the same application checkout.
 Four separate firmware profiles keep radio stacks and application state bounded
 on the ESP32-C3 (8 MB Flash, no PSRAM). Choose a mode before flashing; the card
 does not switch installed applications at runtime. No new paid API, hosted
@@ -14,16 +14,17 @@ still needs the existing account's available quota and Internet on the Mac.
 | `wifi` | Same 2.4 GHz LAN as Mac | `serve` | Quota, conversations, replies, voice, UTC+8 clock |
 | `usb` | USB data cable throughout use | `usb` | Same Codex features; no listening network port |
 | `ble` | Authenticated Bluetooth LE | `ble` | Same features; compressed voice, no listening network port |
-| `offline` | None; USB only for power/flashing | None | Manual UTC+8 clock, battery, 25/5 Pomodoro, stopwatch |
+| `offline` | Independent; USB can power, flash, sync time and export records | Desktop 0.8.0 for sync/export | UTC+8 clock, battery history, 25/5 Pomodoro, stopwatch |
 
 The three connected profiles share a fixed quota screen: 7-day remaining
 percentage, next automatic reset, and the earliest two available reset-opportunity
 expiry dates in UTC+8, 24-hour format. Missing details stay explicit; the card
 never consumes a reset opportunity. Middle opens conversations; hold down opens
-connection instructions. Short up/down do not page or scroll the quota screen.
+connection instructions. Firmware 0.6.0 adds a short-down shortcut to the local
+device page; middle returns. Quota itself still occupies one screen without scrolling.
 
-USB and BLE still need a local Mac helper and an awake Mac; only the offline
-profile is independent. A home network or phone hotspot is another connection
+USB and BLE Codex features still need a local Mac helper and an awake Mac. The
+offline profile runs independently after time sync. A home network or phone hotspot is another connection
 option for the existing Wi-Fi profile, provided its clients can communicate.
 Corporate endpoint/peripheral policy may still restrict any transport. These
 profiles do not change the Mac firewall, VPN or company security software.
@@ -114,23 +115,73 @@ one native-app card power-cycle recovery. Sustained RF interference, range,
 fresh-machine pairing and microphone quality across environments remain unverified.
 Bluetooth pairing and client behavior follow [Bleak's macOS documentation](https://bleak.readthedocs.io/en/stable/backends/macos.html).
 
+## Battery history in every profile (firmware 0.10.0)
+
+All four profiles share the same 192-sample NVS ring and factory MAC identity.
+The powered card records percentage and voltage while unplugged, disconnected
+and screen-off. Normal interval is five minutes; low-battery and abrupt drops
+use denser sampling. Previously saved records survive full power loss and
+compatible profile changes that preserve NVS. The device page shows record
+count or storage failure in every mode. From 0.10.1, capture preparation, recording, finishing and sending defer sampling/writing and
+upload; draft review and Mac transcription continue this work. Stale cached
+values are not recorded with a new timestamp.
+
+| Profile | Import route |
+| --- | --- |
+| BLE | Authenticated normal BLE connection; no USB power required |
+| USB | Normal CPv1 USB connection; unplugged samples remain in the card |
+| Wi-Fi | Configured, authenticated TLS helper; use its shared `PASSPORT_DATA_DIR` to display history in the desktop app |
+| Offline | Existing automatic USB import while desktop runs |
+
+USB/BLE and TLS use `POST /v1/battery`, with `card_serial`, `log_id`,
+`storage_ok`, and at most 16 `samples` rows. Each row is
+`[sequence, utc_seconds_or_zero, uptime_seconds, percent_or_minus_one, millivolts_or_minus_one]`.
+Only a successful durable save returns `ok`, matching `log_id` and last-sequence
+`ack` (zero for an empty page), plus Mac `now` for clock sync independent of
+Codex state. Failures retry without advancing, reconnect replays from the
+oldest retained record, and the Mac deduplicates by card/log/sequence. Sampling
+does not require a connection; an unset clock retains boot uptime, not a guessed
+absolute time. Charging current/state remains unavailable. Desktop 0.9.0 is
+required for the new endpoint; old offline USB imports remain compatible.
+
 ## Fully offline controls
 
 | Page/action | Controls |
 | --- | --- |
-| Change tool | Up/down cycles clock → Pomodoro → stopwatch; timers keep running |
-| Set clock | Middle enters hours, then minutes, then saves; up/down adjusts; hold up cancels |
+| Change tool | Up/down cycles clock → Pomodoro → stopwatch → device information; timers keep running |
+| Device information | Local battery, temperature, heap/program usage, Flash, firmware, uptime and battery-record count; middle returns to clock |
+| Set clock | Offline firmware 0.9.0 auto-syncs over USB with running desktop 0.8.0; middle still enters hours, then minutes, then saves; up/down adjusts; hold up cancels |
 | Pomodoro | Middle starts/pauses; after completion, middle starts the next 5-minute rest or 25-minute focus |
 | Reset Pomodoro | Hold middle resets the session and completed-round count |
 | Stopwatch | Middle starts/pauses/resumes; hold middle clears |
 | Sleep/wake | After 60 seconds the backlight turns off; first press only wakes; focus completion wakes the display |
 
-Clock is 24-hour UTC+8, with seconds at top left on every page. Enter the current
-UTC+8 time manually; seconds start at zero. It continues during display sleep.
+Clock is 24-hour UTC+8, with seconds at top left on every page. The desktop app
+attempts a sync after flashing offline 0.9.0 and on USB attach/reconnect while
+running; no Codex login, voice model or network is needed. A cable alone cannot
+sync time when the app is closed. Manual setting remains available and starts
+seconds at zero. The clock continues during display sleep.
 Power loss/reboot resets clock and timers because no battery-backed RTC is
 assumed; `--:--:--` clearly indicates the need to set time. Pomodoro completion
 is a visual indication and waits for confirmation, without automatically starting
 another phase. No Codex, speech recognition, conversations or quota exist offline.
+
+### Battery history while unplugged (offline firmware 0.9.0)
+
+While powered on, the card records CW2017 percentage and voltage every five
+minutes. At ≤10%, it samples every minute; a drop of at least three points
+after 30 seconds also adds a sample. NVS holds a 192-entry ring: about 16 hours
+at the normal interval, less during dense low-battery sampling. Logging continues
+with the screen off and USB unplugged. Successfully saved entries survive full
+power loss. A storage failure appears on the device page.
+
+On USB reconnection, running desktop 0.8.0 imports and deduplicates the records
+into a private `battery-history.csv` on the Mac, accessible from Device Info.
+Each row has percentage, voltage and boot uptime. Absolute time is available
+only after Mac clock sync. No verified charging-state/current signal exists on
+this board, so a Mac connection is not labeled as actual charging. Use the real
+unplug time to identify the discharge window. Fuel-gauge jumps and voltage
+should be reviewed together; percentages alone are not a capacity test.
 
 ## Build, verification and protocol
 

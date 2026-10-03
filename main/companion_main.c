@@ -1,5 +1,6 @@
 #include "companion.h"
 #include "companion_build.h"
+#include "companion_battery_log.h"
 #include "bsp_i2c.h"
 #include "bsp_display.h"
 #include "bsp_battery.h"
@@ -22,6 +23,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(bsp_display_init());
     ESP_ERROR_CHECK(bsp_lvgl_init() ? ESP_OK : ESP_FAIL);
     if (bsp_battery_init() != ESP_OK) ESP_LOGW("companion", "Battery unavailable");
+    cp_battery_log_start();
 #if CONFIG_PASSPORT_MODE_OFFLINE
     cp_offline_run();
 #else

@@ -8,6 +8,7 @@ static time_t preview_time(time_t *out) {
 #define time preview_time
 #include "../../main/companion_ui.c"
 #include <stdlib.h>
+#include "device_fixture.h"
 
 static uint16_t pixels[240*320];
 static _Alignas(16) uint16_t draw_buffer[240*40];
@@ -24,6 +25,9 @@ bool bsp_lvgl_lock(int timeout) { (void)timeout; return true; }
 void bsp_lvgl_unlock(void) {}
 void bsp_display_backlight(uint8_t percent) { (void)percent; }
 void cp_state_snapshot(cp_state_t *state) { (void)state; }
+bool cp_battery_log_healthy(void) { return true; }
+unsigned cp_battery_log_count(void) { return 42; }
+void cp_battery_log_set_busy(bool busy) { (void)busy; }
 void cp_select(const char *thread, const char *cursor, int page) {
     (void)cursor; strcpy(selected_thread, thread); selected_page = page;
 }
@@ -81,6 +85,13 @@ static void screenshot(const char *directory, const char *name, page_t page) {
         assert(lv_obj_get_height(s_level_text) <= 22);
         assert(!lv_obj_has_flag(s_meter, LV_OBJ_FLAG_HIDDEN));
     }
+    if (page==DEVICE && preview_passkey<0) {
+        assert(lv_obj_get_height(s_body)<=176);
+        assert(lv_obj_get_scroll_y(s_scroll)==0);
+        assert(!lv_obj_has_flag(s_scroll,LV_OBJ_FLAG_HIDDEN));
+        assert(strstr(lv_label_get_text(s_body),"电量 86%"));
+        assert(!strcmp(lv_label_get_text(s_battery),"86%"));
+    }
     lv_obj_invalidate(s_screen);
     lv_refr_now(NULL);
     char path[1024]; snprintf(path, sizeof(path), "%s/%s.ppm", directory, name);
@@ -118,7 +129,7 @@ int main(int argc, char **argv) {
     s.clock_synced = false;
     render(); assert(strcmp(lv_label_get_text(s_clock), "--:--:--") == 0);
     s.clock_synced = true;
-    s.configured = s.wifi = s.bridge = true; s.battery = 86;
+    s.configured = s.wifi = s.bridge = true; s_device=device_fixture();
     preview_now = 1790910000;
     s.view.remaining[0] = 16; s.view.remaining[1] = -1;
     s.view.windows[0] = 10080; s.view.windows[1] = 0;
@@ -135,11 +146,30 @@ int main(int argc, char **argv) {
         snprintf(s.view.threads[i].id, CP_ID_SIZE, "thread-%d", i);
     }
     screenshot(argv[1], "01-quota", HOME);
+    int levels[] = {100, 51, 50, 21, 20, 0, -1, 101};
+    for (unsigned i=0; i<sizeof(levels)/sizeof(levels[0]); ++i) {
+        s_device.battery=levels[i]; render();
+        assert(lv_color_to_u32(lv_obj_get_style_text_color(s_battery,0)) ==
+               lv_color_to_u32(lv_color_hex(cp_battery_color(levels[i]))));
+        assert(lv_bar_get_value(s_battery_icon)==(levels[i]>=0 && levels[i]<=100 ? levels[i] : 0));
+        if (levels[i]<0 || levels[i]>100) assert(!strcmp(lv_label_get_text(s_battery),"--"));
+    }
+    s_device.battery=20; screenshot(argv[1], "21-battery-red", HOME);
+    s_device.battery=50; screenshot(argv[1], "22-battery-yellow", HOME);
+    s_device.battery=100; screenshot(argv[1], "23-battery-green", HOME);
+    s_device.valid=false; render();
+    assert(!strcmp(lv_label_get_text(s_battery),"--") && lv_bar_get_value(s_battery_icon)==0);
+    s_device=device_fixture(); render();
     assert(strcmp(lv_label_get_text(s_quota), "7 天额度  剩余 16%") == 0);
     assert(strcmp(lv_label_get_text(s_auto_date), "2026-10-05 10:06") == 0);
     assert(strcmp(lv_label_get_text(s_reset_dates[0]), "2026-10-04 13:41") == 0);
     assert(strcmp(lv_label_get_text(s_reset_dates[1]), "2026-10-05 12:21") == 0);
     cp_view_t known = s.view;
+    s.view.quota_stale = true;
+    screenshot(argv[1], "01f-quota-cached", HOME);
+    assert(strcmp(lv_label_get_text(s_status), "额度更新失败（旧值）") == 0);
+    assert(strcmp(lv_label_get_text(s_quota), "7 天额度  剩余 16%") == 0);
+    s.view = known;
     s.view.reset_credit_count = 1; s.view.reset_credit_expiry[1] = 0;
     screenshot(argv[1], "01a-quota-one", HOME);
     assert(!lv_label_get_text(s_reset_dates[1])[0]);
@@ -156,6 +186,9 @@ int main(int argc, char **argv) {
     assert(strcmp(lv_label_get_text(s_quota), "7 天额度  未知") == 0);
     assert(strcmp(lv_label_get_text(s_auto_date), "--") == 0);
     assert(strcmp(lv_label_get_text(s_reset_dates[0]), "等待数据") == 0);
+    s.view.quota_stale = true;
+    screenshot(argv[1], "01g-quota-unavailable", HOME);
+    assert(strcmp(lv_label_get_text(s_status), "额度暂不可用") == 0);
     s.view = known;
     s.view.updated = time(NULL)-91; s.view.reset[0] = time(NULL)-1;
     s.view.reset_credit_expiry[0] = time(NULL)-1;
@@ -164,7 +197,13 @@ int main(int argc, char **argv) {
     assert(strcmp(lv_label_get_text(s_auto_date), "等待额度刷新") == 0);
     assert(strcmp(lv_label_get_text(s_reset_dates[0]), "已到期，等待刷新") == 0);
     s.view = known;
-    handle((cp_key_t){BSP_BTN_DOWN, BSP_BTN_CLICK}); assert(s_page == HOME);
+    handle((cp_key_t){BSP_BTN_DOWN, BSP_BTN_CLICK}); assert(s_page == DEVICE);
+    screenshot(argv[1],"17-device",DEVICE);
+    s.bridge=s.wifi=false;
+    render(); assert(strstr(lv_label_get_text(s_body),"固件 0.10.2"));
+    handle((cp_key_t){BSP_BTN_OK,BSP_BTN_CLICK}); assert(s_page==HOME);
+    s.bridge=s.wifi=true;
+    handle((cp_key_t){BSP_BTN_DOWN,BSP_BTN_CLICK}); assert(s_page==DEVICE);
     handle((cp_key_t){BSP_BTN_UP, BSP_BTN_CLICK}); assert(s_page == HOME);
     handle((cp_key_t){BSP_BTN_DOWN, BSP_BTN_LONG}); assert(s_page == SETTINGS);
     handle((cp_key_t){BSP_BTN_OK, BSP_BTN_CLICK}); assert(s_page == HOME);
@@ -205,6 +244,13 @@ int main(int argc, char **argv) {
     s.mode = CP_REVIEW; strcpy(s.view.draft_state, "ready");
     strcpy(s.view.draft, "请帮我检查这个项目的代码，找出问题，并运行测试。");
     screenshot(argv[1], "05-confirm", REVIEW);
+    // The first OK click after screen-off only wakes; it must not send a draft.
+    assert(cp_screen_should_dim(s.mode,60000000) && cp_telemetry_allowed(s.mode));
+    s_dark=true;
+    handle((cp_key_t){BSP_BTN_OK, BSP_BTN_CLICK});
+    assert(!s_dark && sends==0 && s.mode==CP_REVIEW);
+    assert(!strcmp(s.view.draft_state,"ready") && s.view.draft[0]);
+    s_ignore_until=0;
     handle((cp_key_t){BSP_BTN_OK, BSP_BTN_CLICK}); assert(sends == 1);
     handle((cp_key_t){BSP_BTN_UP, BSP_BTN_LONG}); assert(cancels == 1);
     s.mode = CP_IDLE;
@@ -229,6 +275,8 @@ int main(int argc, char **argv) {
         lv_obj_scroll_to_y(s_scroll, i%2 ? 600 : 0, LV_ANIM_OFF);
         lv_refr_now(NULL);
         s_page = HOME; render(); lv_refr_now(NULL);
+        s_page=DEVICE; lv_obj_scroll_to_y(s_scroll,0,LV_ANIM_OFF); render(); lv_refr_now(NULL);
+        assert(lv_obj_get_height(s_body)<=176);
         assert(lv_mem_test() == LV_RESULT_OK);
     }
     lv_mem_monitor_t memory; lv_mem_monitor(&memory);

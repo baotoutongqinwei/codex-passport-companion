@@ -169,9 +169,11 @@ async def ble_session(client, service, disconnected, stop=None, report=lambda *_
                 disconnected.set()
 
     # On macOS, accessing this protected characteristic opens the OS PIN dialog.
+    report("authenticating", "正在验证卡片；首次使用请在 Mac 输入卡片上的六位配对码")
     protocol = await cancellable(client.read_gatt_char(INFO), stop, 120)
     if bytes(protocol) != b"CPv1-IMA":
         raise ClientError("卡片协议不匹配，请选择对应固件")
+    report("subscribing", "正在建立卡片数据通道")
     await cancellable(client.start_notify(TX, receive), stop, 10)
     report("connected", "蓝牙已连接；临时断线会自动重连原卡片")
     try:
@@ -210,8 +212,11 @@ async def serve_ble(service, address=None, stop=None, report=lambda *_: None):
     delay, failures = 1, 0
     while not stop.is_set():
         connected = False
+        stage = "scanning"
         def status(state, message):
-            nonlocal connected, failures, delay
+            nonlocal connected, failures, delay, stage
+            if state in ("authenticating", "subscribing", "connected"):
+                stage = state
             if state == "connected":
                 connected, failures, delay = True, 0, 1
             report(state, message)
@@ -229,7 +234,8 @@ async def serve_ble(service, address=None, stop=None, report=lambda *_: None):
                 device, _ = candidates[0]
                 identity = device.address.lower()
                 disconnected = asyncio.Event()
-                report("pairing", "正在连接；首次使用请在 Mac 输入卡片上的六位配对码")
+                stage = "connecting"
+                report(stage, "正在连接卡片，请保持卡片开机并靠近 Mac")
                 client = BleakClient(device, timeout=30, disconnected_callback=lambda _c: disconnected.set())
                 try:
                     await cancellable(client.connect(), stop, 35)
@@ -250,9 +256,16 @@ async def serve_ble(service, address=None, stop=None, report=lambda *_: None):
                 raise ClientError(message) from exc
             if not connected:
                 failures += 1
+            message = {
+                "scanning": "蓝牙扫描超时，请检查 Mac 蓝牙开关及本程序的蓝牙权限",
+                "connecting": "无法连接卡片，请检查电源、距离及是否被其他程序占用",
+                "authenticating": "卡片身份验证失败或超时；若 Mac 弹出配对框，请输入卡片上的六位码",
+                "subscribing": "卡片数据通道建立失败，请重新连接卡片",
+                "connected": "蓝牙通信中断；中断录音需重录，已有草稿保留",
+            }[stage]
             if failures >= 3:
-                raise ClientError("连续三次连接或配对失败，已暂停；请检查六位配对码。若曾忽略设备，在卡片连接说明页长按中键清除配对后重试") from exc
-            report("reconnecting", "蓝牙连接中断，正在重连原卡片；中断录音需重录，已有草稿保留")
+                raise ClientError(f"连续三次失败，已暂停。{message}") from exc
+            report("reconnecting", f"{message}；正在自动重试原卡片")
         await retry_delay(stop, delay)
         delay = min(delay*2, 15)
 

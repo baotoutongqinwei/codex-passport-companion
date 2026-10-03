@@ -87,6 +87,11 @@ def dispatch(service, frame):
     ident, status, path, data = frame
     if status:  # Responses and stale boot chatter never become actions.
         return None
+    endpoint = path.split("?", 1)[0]
+    route = ("audio" if endpoint.startswith(("/v1/audio/", "/v1/audio-adpcm/")) else
+             {"/v1/state": "state", "/v1/device": "device", "/v1/battery": "battery", "/v1/action": "action",
+              "/v1/diagnostic-result": "diagnostic-result"}.get(endpoint, "unknown"))
+    error_message = ""
     try:
         if len(data) > 4096:
             raise ClientError("请求过大")
@@ -99,6 +104,10 @@ def dispatch(service, frame):
             result = service.state(value("thread"), value("cursor"), int(value("page", "-1")))
         elif url.path == "/v1/device":
             result = service.device_report(json.loads(data))
+        elif url.path == "/v1/battery":
+            result = service.battery_report(json.loads(data))
+        elif url.path == "/v1/diagnostic-result":
+            result = service.diagnostics.complete(json.loads(data))
         elif url.path == "/v1/action":
             action = json.loads(data)
             if not isinstance(action, dict):
@@ -111,8 +120,10 @@ def dispatch(service, frame):
             raise ClientError("未知请求")
         status = 200
     except (ValueError, RpcError) as exc:
-        status, result = 409, {"error": display_text(exc, 100)}
+        error_message = display_text(exc, 100)
+        status, result = 409, {"error": error_message}
     body = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode()
     if len(body) > MAX_BODY:
         status, body = 500, b'{"error":"response too large"}'
+    service.diagnostics.trace(route, status, error_message)
     return encode(ident, status, body=body)

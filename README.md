@@ -32,7 +32,21 @@ USB firmware flashing in desktop 0.4.0; the device shown here is an isolated pre
 
 <p align="center"><img src="assets/images/codex/desktop-flasher-dark.png" width="860" alt="USB firmware flashing with bundled profiles and configuration preservation"></p>
 
+Desktop 0.6.0 adds a diagnostic console. This native preview uses public sample
+events, not a recording of this card's communication.
+
+<p align="center"><img src="assets/images/codex/desktop-console-dark.png" width="860" alt="Connection events, request results and native card diagnostics"></p>
+
 ### Device information
+
+Desktop 0.8.1 adds a battery bar chart: open Device Info, then the battery history
+button. Switch between the last 24 hours and seven days, select a card and click
+a bar for its timestamp, percentage and voltage. Gaps remain blank; red means
+≤20%, and charging is not inferred. These native light/dark previews use fictional data.
+
+| Battery history · dark | Battery history · light |
+| --- | --- |
+| <img src="assets/images/codex/desktop-battery-dark.png" width="430" alt="Battery bars with low readings in red and a gap"> | <img src="assets/images/codex/desktop-battery-light.png" width="430" alt="Battery history in light appearance"> |
 
 Desktop 0.5.0 adds local hardware monitoring and firmware comparison. These
 native previews use fictional readings; they are not hardware measurements.
@@ -43,6 +57,13 @@ native previews use fictional readings; they are not hardware measurements.
 
 ### On your card
 
+Firmware 0.6.0 adds a one-screen device summary. From quota, click down; middle
+returns. It works without a Mac connection, including in the offline profile.
+
+| Companion device page | Offline device page |
+| --- | --- |
+| <img src="assets/images/codex/card-17-device.png" width="200" alt="Card battery, chip temperature, memory, storage and firmware"> | <img src="assets/images/codex/card-18-offline-device.png" width="200" alt="Offline card device summary"> |
+
 | Weekly quota | Recent conversations | Recording feedback | Task complete |
 | --- | --- | --- | --- |
 | <img src="assets/images/codex/card-01-quota.png" width="200" alt="Weekly quota and reset dates"> | <img src="assets/images/codex/card-02-threads.png" width="200" alt="Conversation status and unread indicators"> | <img src="assets/images/codex/card-04-record.png" width="200" alt="Recording duration and microphone level"> | <img src="assets/images/codex/card-08-completed.png" width="200" alt="Task completion banner"> |
@@ -51,15 +72,49 @@ native previews use fictional readings; they are not hardware measurements.
 | --- | --- | --- |
 | <img src="assets/images/codex/card-12-offline-clock.png" width="200" alt="Independent offline clock"> | <img src="assets/images/codex/card-13-offline-focus.png" width="200" alt="Offline Pomodoro timer"> | <img src="assets/images/codex/card-14-offline-stopwatch.png" width="200" alt="Offline stopwatch"> |
 
+Firmware 0.10.0 records battery percentage and voltage in all four profiles,
+including while unplugged and disconnected. BLE/USB/Wi-Fi replay retained records
+over their normal connection; offline imports and syncs time over USB. Desktop
+0.9.0 saves one deduplicated CSV for the chart. All card device pages show record
+count; compatible configuration-preserving profile changes retain the same log.
+<img src="assets/images/codex/card-10-offline-unset.png" width="200" alt="Offline card prompt for automatic USB time sync or manual setting">
+
 Mac connection/voice dark screenshots show the packaged app; the light settings and firmware-page screenshots use
 isolated sample data. Card images are **real LVGL renders at 240 × 320 with
 sample data**, not device photographs or hardware acceptance evidence. UI text is
 Simplified Chinese. [Capture sources and reproduction](assets/images/codex/README.md).
 
+Firmware 0.10.1 labels cached quota values when refresh fails, or shows unknown when no cache exists. Conversation and draft updates remain available.
+
+| Cached quota | Quota unavailable |
+| --- | --- |
+| <img src="assets/images/codex/card-19-quota-cached.png" width="200" alt="Failed quota refresh with cached readings"> | <img src="assets/images/codex/card-20-quota-unavailable.png" width="200" alt="Unavailable quota with conversation navigation retained"> |
+
+Desktop 0.9.2: retained-draft monitoring and Bluetooth errors, rendered with synthetic data.
+
+| Draft monitoring | Connection error |
+| --- | --- |
+| <img src="assets/images/codex/desktop-draft-dark.png" width="440" alt="Draft monitoring with fresh sample"> | <img src="assets/images/codex/desktop-bluetooth-error-light.png" width="440" alt="Actionable Bluetooth connection error"> |
+
+Firmware 0.10.2 adds a filled battery icon: red at 0–20%, yellow at 21–50%, green at 51–100%; unknown readings use an empty gray icon and `--`. Shared across all four profiles. Actual LVGL sample renders:
+
+| 20% · Red | 50% · Yellow | 100% · Green |
+| --- | --- | --- |
+| <img src="assets/images/codex/card-21-battery-red.png" width="200" alt="20 percent battery in red"> | <img src="assets/images/codex/card-22-battery-yellow.png" width="200" alt="50 percent battery in yellow"> | <img src="assets/images/codex/card-23-battery-green.png" width="200" alt="100 percent battery in green"> |
+
 ## Latest updates
 
 | Batch · date | Changes | Upgrade |
 | --- | --- | --- |
+| 017 · 2026-10-03 | Battery icon and red/yellow/green percentage in all four profiles | Flash matching firmware 0.10.2; no desktop update required |
+| 016 · 2026-10-03 | Background quota refresh, phase-specific BLE errors and fresh telemetry during draft review | Desktop 0.9.2 only; no flash required for this batch |
+| 015 · 2026-10-03 | Draft standby keeps battery logging; quota failures preserve chat/drafts, with strict checks before sending | Desktop 0.9.1 and firmware 0.10.1 |
+| 014 · 2026-10-03 | Shared on-card battery history across BLE, USB, Wi-Fi and offline; bounded replay and durable acknowledgments; record count in every device page | Desktop 0.9.0 and matching firmware 0.10.0 |
+| 013 · 2026-10-03 | Native battery bar chart: 24 hours/seven days, per-card history, sample inspection, light/dark appearance and honest gaps | Update desktop 0.8.1; data collection still requires offline 0.9.0 from batch 012 |
+| 012 · 2026-10-03 | Offline battery history: samples on the unplugged card, automatic CSV import on USB return, record count on device page | Update desktop 0.8.0 and flash offline 0.9.0; USB power is unnecessary during measurement |
+| 011 · 2026-10-03 | Offline clock syncs from Mac over USB after flashing and on reconnection, while retaining manual setting | Update desktop 0.7.0 and flash offline 0.8.0; unplug for independent use |
+| 010 · 2026-10-03 | Desktop 0.6.0 diagnostic console: connection/request/error history and native read-only card commands; firmware 0.7.0 for USB/BLE command replies | Replace Mac app; flash matching USB/BLE firmware to execute commands |
+| 009 · 2026-10-02 | Firmware 0.6.0: local card device page in all four profiles, shared battery/resource sampling | Flash matching firmware; desktop 0.5.0 remains compatible |
 | 008 · 2026-10-02 | Consolidate batches 005–007 and BLE 0.5.0 device evidence into local `master` | Source/documentation only |
 | 007 · 2026-10-02 | Desktop/firmware 0.5.0: hardware information, local USB/BLE monitoring and firmware comparison | Replace Mac app and flash the matching card firmware |
 | 006 · 2026-10-02 | Stable listening hint; pauses no longer trigger a low-volume warning | Flash the updated companion firmware; Mac app unchanged |
@@ -82,8 +137,10 @@ while the new recording hint and remaining alerts still await hardware acceptanc
 | Busy threads | Confirmed messages enter the original thread's queue when supported; uncertain sends are never automatically retried. |
 | Quota | One page with 7-day remaining quota, automatic reset time and the earliest two available reset-opportunity expiry dates. No reset is consumed. |
 | Clock | Top-left UTC+8, 24-hour time; synced from the connected Mac. |
-| Mac window | Native five-page app, light/dark appearance, original icon, account/model checks, USB/BLE choice and model reuse. |
+| Card device page | One screen with battery/voltage, chip temperature, heap/program usage, Flash, firmware and uptime; available without a connection in all 0.6.0 profiles. |
+| Mac window | Native six-page app, light/dark appearance, original icon, account/model checks, USB/BLE choice and model reuse. |
 | Device information | Local USB/BLE monitoring: hardware, heap/application/NVS use, battery/voltage, die temperature, uptime, RSSI and task/stack data; compare current firmware with selected/bundled builds and open the upgrade entry point. Requires 0.5.0 app and firmware. |
+| Diagnostic console | In-memory connection, request-type/status and error history; choose a read-only card command for overview, battery/temperature, memory/tasks or firmware identity. Command replies require USB/BLE firmware 0.7.0. |
 | Firmware flashing | Four bundled profiles or a local merged `.bin`; USB device selection, version/hash display, configuration preservation by default, confirmed writes, progress and local logs. |
 | Feedback and alerts | Recording phases and microphone level; completion/action-needed banners, optional sounds and UTC+8 quiet hours. Requires P1 firmware. |
 | Recovery | Reconnect the original USB/BLE device, preserve ready drafts and request dedupe in the running helper, discard interrupted recordings. |
@@ -173,10 +230,10 @@ curl and a C/C++ compiler. Source builds and downloads need additional disk spac
 
 | Area | Recorded result |
 | --- | --- |
-| Build | Batch 007: all four 0.5.0 firmware gates, merged-image/ELF archives, ARM64 desktop bundle, bundled tools/firmware, signature and ZIP checks passed. |
-| Host tests | 87 companion Python tests and C/BSP/repository gates passed; monitoring data, version comparisons, image validation, preservation boundaries and desktop interlocks covered. Native Chinese device-page layout checked with labeled sample data. |
-| Device tests | BLE 0.5.0 flashed through the packaged desktop while preserving configuration. All three segments verified; 20-second startup observation, BLE reconnection, state synchronization, live readings and build-identity comparison passed. Earlier confirmed results include P1 meter/recognition, USB voice/reply, BLE 45-second audio and card power-cycle recovery. |
-| Unverified | Card versus desktop battery comparison, sensor accuracy, sustained monitoring/recording headroom, batch 006 listening hint and GUI flashing failure recovery; P1 sound/alert wake-up, clean-Mac installation, Intel and long-duration tests. |
+| Build | Batch 017: all four 0.10.2 firmware gates and merged/debug archive checks passed. Batch 016: signed ARM64 desktop 0.9.2 and complete BLE regression gate passed; four verified 0.10.1 images bundled, with USB/offline/Wi-Fi reused from batch 015. |
+| Host tests | 120 companion Python tests and C/BSP/repository gates passed, including battery chart aggregation, unplugged rings, USB import/deduplication and clock handshakes. Native chart light/dark/empty/week previews passed. Chinese glyph coverage and actual LVGL layouts passed; companion/offline navigation exercised 200/500 cycles. |
+| Device tests | Batch 017 BLE 0.10.2 flashed with configuration preserved; all three writes and 20-second startup passed. The user confirmed the currently displayed battery icon and color. Batch 016 desktop and firmware 0.10.1: NOT RUN. Previous batch: BLE 0.10.0 flashed with configuration preserved and all three segments verified. Startup, helper connection, real CSV import, controlled-reboot restoration and replay deduplication passed. Packaged desktop Bluetooth permission needs reauthorization after the build signature changed. Earlier offline startup and BLE voice checks are historical, not full acceptance of this release. |
+| Unverified | Physical 0.10.2 threshold transitions and other-profile display checks; physical 0.10.1 draft standby/sampling/wake and quota recovery; USB/Wi-Fi/offline 0.10.0 on-device import, multi-hour unplugged discharge and physical power loss during writes; USB/BLE diagnostic command round trips/reconnect; physical card navigation, sleep/wake, battery agreement, sensor accuracy and sustained monitoring/recording headroom; GUI flashing failure recovery, P1 sound/alert wake-up, clean-Mac installation, Intel and long-duration tests. |
 
 Intel/Windows/Linux desktop bundles are not supplied. Codex's experimental
 app-server queue and quota fields can change between versions; an unsupported

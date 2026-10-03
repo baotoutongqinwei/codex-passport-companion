@@ -1,5 +1,8 @@
 #include "companion.h"
 #include "companion_transport.h"
+#include "companion_device.h"
+#include "companion_battery_ui.h"
+#include "companion_battery_log.h"
 #include "bsp_button.h"
 #include "bsp_display.h"
 #include "esp_timer.h"
@@ -12,15 +15,17 @@
 #include <time.h>
 
 LV_FONT_DECLARE(passport_font_16);
-typedef enum { HOME, THREADS, CHAT, MENU, REVIEW, RECORD, SETTINGS } page_t;
+typedef enum { HOME, THREADS, CHAT, MENU, REVIEW, RECORD, SETTINGS, DEVICE } page_t;
 typedef struct { bsp_btn_t id; bsp_btn_ev_t event; } cp_key_t;
 static QueueHandle_t s_keys;
 static cp_state_t s;
+static cp_device_info_t s_device;
 static page_t s_page = HOME;
 static cp_mode_t s_previous_mode;
 static int s_choice;
 static char s_thread[CP_ID_SIZE], s_cursor[CP_CURSOR_SIZE];
 static lv_obj_t *s_screen, *s_title, *s_status, *s_battery, *s_footer, *s_clock;
+static lv_obj_t *s_battery_icon;
 static lv_obj_t *s_rows[4], *s_row_text[4], *s_row_status[4], *s_bar, *s_quota;
 static lv_obj_t *s_auto_title, *s_auto_date, *s_reset_title, *s_reset_dates[2];
 static lv_obj_t *s_scroll, *s_body;
@@ -63,8 +68,7 @@ static void create_ui(void) {
     lv_obj_remove_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
     s_clock = label(s_screen, 18, 12, 84, 0x55E6B0);
     text(s_clock, "--:--:--");
-    lv_obj_t *brand = label(s_screen, 109, 12, 60, 0xAFBCCD);
-    text(brand, "CODEX");
+    s_battery_icon = cp_battery_icon_create(s_screen, 158, 18);
     s_battery = label(s_screen, 178, 12, 48, 0xAFBCCD);
     s_title = label(s_screen, 18, 42, 206, 0xFFFFFF);
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_DOT);
@@ -127,9 +131,11 @@ static void render(void) {
     char clock[9];
     cp_clock_text(clock, (int64_t)time(NULL), s.clock_synced);
     text(s_clock, clock);
-    if (s.battery >= 0) snprintf(value, sizeof(value), "%d%%", s.battery);
+    int battery = s_device.valid ? s_device.battery : -1;
+    if (battery >= 0 && battery <= 100) snprintf(value, sizeof(value), "%d%%", battery);
     else strcpy(value, "--");
     text(s_battery, value);
+    cp_battery_icon_update(s_battery_icon, s_battery, battery);
     char connecting[48]; snprintf(connecting,sizeof(connecting),"正在连接 %s",cp_transport_name());
     const char *status = !s.configured ? "等待 USB 配置" : !s.wifi ? connecting :
                          !s.bridge ? "等待 Mac 桥接服务" : "已连接 Mac";
@@ -182,9 +188,13 @@ static void render(void) {
                 !s.view.reset_credit_details_complete ? "到期时间暂不可用" : "无固定到期时间";
             text(s_reset_dates[i], expiry_text);
         }
-        if (s.bridge && !s.message[0] && (!s.view.updated || now-s.view.updated > 90))
-            text(s_status, "额度待刷新");
-        text(s_footer, "中键对话 / 长按下连接");
+        if (s.bridge && !s.message[0]) {
+            if (s.view.quota_stale)
+                text(s_status, s.view.updated ? "额度更新失败（旧值）" : "额度暂不可用");
+            else if (!s.view.updated || now-s.view.updated > 90)
+                text(s_status, "额度待刷新");
+        }
+        text(s_footer, "中键对话 / 下键设备");
     } else if (s_page == THREADS) {
         text(s_title, s.view.count ? "选择对话" : "暂无可用对话");
         for (int i = 0; i < s.view.count; ++i) {
@@ -237,6 +247,17 @@ static void render(void) {
         text(s_body, s.mode == CP_TRANSCRIBING ? "正在 Mac 离线识别\n请稍候，不会自动发送" : s.view.draft);
         bool ready = strcmp(s.view.draft_state, "ready") == 0;
         text(s_footer, s.mode == CP_SENDING ? "正在等待 Mac 确认\n请勿重复发送" : ready ? "中键发送 / 上下滚动\n长按上取消" : "长按上取消并返回");
+    } else if (s_page == DEVICE) {
+        char details[384];
+        cp_device_text(&s_device,esp_timer_get_time(),details);
+        text(s_title,"设备信息");
+        snprintf(value,sizeof(value),"ESP32-C3 / %s",cp_transport_name());
+        text(s_status,value);
+        text(s_body,details);
+        if (cp_battery_log_healthy())
+            snprintf(value,sizeof(value),"中键返回 / 长按下连接\n电量记录 %u 条",cp_battery_log_count());
+        else snprintf(value,sizeof(value),"中键返回 / 长按下连接\n电量日志存储失败");
+        text(s_footer,value);
     } else {
         text(s_title, "连接你的 Mac");
         text(s_body, cp_transport_help());
@@ -297,7 +318,7 @@ static void handle(cp_key_t key) {
             cp_utf8_copy(s_cursor, sizeof(s_cursor), s.view.next); s_choice = 0;
             cp_select(s_thread, s_cursor, -1);
         } else if (key.id == BSP_BTN_DOWN && s_page == CHAT) cp_select(s_thread, s_cursor, -1);
-        else if (key.id == BSP_BTN_DOWN && s_page == HOME) s_page = SETTINGS;
+        else if (key.id == BSP_BTN_DOWN && (s_page == HOME || s_page == DEVICE)) s_page = SETTINGS;
         else if (key.id == BSP_BTN_OK && s_page == CHAT) cp_record_start();
         else if (key.id == BSP_BTN_OK && s_page == SETTINGS) cp_transport_forget_bonds();
         return;
@@ -305,6 +326,9 @@ static void handle(cp_key_t key) {
     if (key.event != BSP_BTN_CLICK) return;
     if (s_page == HOME) {
         if (key.id == BSP_BTN_OK) open_threads();
+        else if (key.id == BSP_BTN_DOWN) { s_page=DEVICE; lv_obj_scroll_to_y(s_scroll,0,LV_ANIM_OFF); }
+    } else if (s_page == DEVICE) {
+        s_page=HOME;
     } else if (s_page == THREADS || s_page == MENU) {
         int count = s_page == MENU ? 4 : s.view.count;
         if (!count) return;
@@ -340,6 +364,8 @@ void cp_ui_run(void) {
     s_keys = xQueueCreate(16, sizeof(cp_key_t));
     ESP_ERROR_CHECK(s_keys ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(bsp_button_init(button, NULL));
+    cp_device_update();
+    cp_device_snapshot(&s_device);
     while (!bsp_lvgl_lock(1000)) vTaskDelay(pdMS_TO_TICKS(20));
     create_ui();
     bsp_lvgl_unlock();
@@ -350,6 +376,12 @@ void cp_ui_run(void) {
         char selected[CP_ID_SIZE] = "";
         if (s_page == THREADS && s_choice < s.view.count) strcpy(selected, s.view.threads[s_choice].id);
         cp_state_snapshot(&s);
+        cp_battery_log_set_busy(!cp_telemetry_allowed(s.mode));
+        if (cp_telemetry_allowed(s.mode) && esp_timer_get_time()-s_device.sampled_us>=5000000) {
+            // Hardware I/O stays outside the LVGL lock and voice capture phases.
+            cp_device_update();
+            cp_device_snapshot(&s_device);
+        }
         if (selected[0]) {
             s_choice = 0;
             for (int i = 0; i < s.view.count; ++i) if (!strcmp(selected, s.view.threads[i].id)) s_choice = i;
@@ -364,6 +396,12 @@ void cp_ui_run(void) {
             if (s_dark) { s_dark=false; bsp_display_backlight(75); }
         }
         if (s.mode != s_previous_mode) {
+            // Give a newly available draft a full viewing interval, including
+            // after a slow transcription. Waking alone never confirms sending.
+            if (s.mode == CP_REVIEW) {
+                s_last_key = now;
+                if (s_dark) { s_dark=false; bsp_display_backlight(75); }
+            }
             // Render short preparation/ready phases immediately, even when the
             // normal page refresh interval has not elapsed yet.
             rendered = 0;
@@ -382,7 +420,7 @@ void cp_ui_run(void) {
             if (now-rendered > interval) { render(); read_latest(); rendered = now; }
             bsp_lvgl_unlock();
         }
-        if (!s_dark && s.mode == CP_IDLE && now-s_last_key > 60000000) { bsp_display_backlight(0); s_dark = true; }
+        if (!s_dark && cp_screen_should_dim(s.mode,now-s_last_key)) { bsp_display_backlight(0); s_dark = true; }
         vTaskDelay(pdMS_TO_TICKS(40));
     }
 }

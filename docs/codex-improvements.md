@@ -17,10 +17,20 @@ not a claim that every reference feature has been tested on this device.
 | P2 | Quota pacing hint | Optional heuristic based on remaining quota and elapsed period; preserve the fixed weekly page, automatic reset and two opportunity expiry dates | Backlog |
 | P2 | Persistent display settings | Brightness, sound and screen timeout | Backlog |
 | P2 | Optional tap-to-record | Tap start/stop alongside hold-to-record | Backlog |
-| P2 | Version guidance | Compatible host/firmware version display and update instructions | Backlog |
+| P2 | Version guidance | Compare the card with bundled/selected firmware and show upgrades | Local comparison implemented; online release checks pending |
 | Deferred | Card approvals | Requires a separately reviewed permission flow | Not scheduled |
 | Deferred | Phone companion | Additional platform maintenance and pairing work | Not scheduled |
 | Deferred | Elaborate animations | Requires measured RAM and performance budget | Not scheduled |
+
+## 2026-10-03 code-review follow-ups
+
+| Priority | Work | Status |
+| --- | --- | --- |
+| P1 | Decouple draft standby from battery sampling | Implemented in batch 015; host/LVGL pass, hardware pending |
+| P1 | Isolate quota failures and label cached data | Batch 015 fallback and batch 016 asynchronous refresh implemented; slow-response/strict send checks pass, hardware pending |
+| P2 | Distinguish Bluetooth scan, permission, connection, authentication and notification failures | Batch 016 implemented; fault injection passes, hardware pending |
+| P2 | Separate service/controller responsibilities and share request dispatch while preserving access differences | Pending; incremental cleanup alongside related features |
+| P3 | Indexed battery history with CSV export | Pending; address as long-term history grows |
 
 ## References
 

@@ -18,6 +18,7 @@ except ImportError:
 from rpc import RpcError
 from local_data import voice_paths
 from activity import Activity, load_alerts, reply_revision, thread_status
+from diagnostics import Diagnostics
 
 PAGE_CHARS = 360
 MAX_RECORD_BYTES = 16000 * 2 * 45
@@ -125,6 +126,13 @@ class Companion:
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.limits = None
         self.limits_at = 0
+        self.limits_retry_at = 0
+        self.limits_stale = False
+        self.limits_lock = threading.RLock()
+        self.limits_fetch_lock = threading.Lock()
+        self.limits_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="quota")
+        self.limits_future = None
+        self.closing = False
         self.live = {}
         self.history = {}
         self.resumed = set()
@@ -137,6 +145,16 @@ class Companion:
         self.watch_index = 0
         self.device = None
         self.device_at = None
+        self.battery_history = ""
+        self.diagnostics = Diagnostics()
+
+    def battery_report(self, data):
+        from battery_history import receive_battery
+        reply, summary, _added = receive_battery(self.root, data)
+        if summary:
+            with self.lock:
+                self.battery_history = summary + "\n已同步卡片电量记录，可查看图表或 CSV。"
+        return reply
 
     def device_report(self, data):
         from device_info import normalize
@@ -151,7 +169,8 @@ class Companion:
             ident = params.get("threadId")
             if method == "account/rateLimits/updated":
                 # Force a full read to retain all quota buckets.
-                self.limits_at = 0
+                with self.limits_lock:
+                    self.limits_at = 0
             elif ident:
                 state = self.live.setdefault(ident, {})
                 if method == "turn/started":
@@ -178,11 +197,42 @@ class Companion:
                     self.live.pop(next(iter(self.live)))
 
     def refresh_limits(self, force=False):
-        if force or time.monotonic() - self.limits_at > 30 or self.limits is None:
-            self.account = self.rpc.call("account/read").get("account") or {}
-            self.limits = quota_view(self.rpc.call("account/rateLimits/read", {"excludeResetCreditDetails": False}))
-            self.limits_at = time.monotonic()
-        return self.limits
+        """Strict refresh: sending must never fall back to an old allowance."""
+        # Serialize network reads separately: snapshots never wait on RPC I/O.
+        with self.limits_fetch_lock:
+            with self.limits_lock:
+                if self.closing:
+                    raise RpcError("配套程序正在关闭")
+                if not force and not self.limits_stale and self.limits is not None and time.monotonic()-self.limits_at <= 30:
+                    return self.limits
+            try:
+                account = self.rpc.call("account/read").get("account") or {}
+                limits = quota_view(self.rpc.call("account/rateLimits/read", {"excludeResetCreditDetails": False}))
+            except RpcError:
+                with self.limits_lock:
+                    self.limits_stale = True
+                    self.limits_retry_at = time.monotonic() + 30
+                raise
+            with self.limits_lock:
+                self.account, self.limits = account, limits
+                self.limits_at = time.monotonic()
+                self.limits_stale = False
+                self.limits_retry_at = 0
+                return self.limits
+
+    def quota_snapshot(self):
+        """Return immediately; one background read refreshes an expired cache."""
+        with self.limits_lock:
+            now = time.monotonic()
+            stale = self.limits_stale or self.limits is None or now-self.limits_at > 30
+            if (stale and not self.closing and now >= self.limits_retry_at and
+                    (self.limits_future is None or self.limits_future.done())):
+                self.limits_future = self.limits_executor.submit(self.refresh_limits)
+            result = dict(self.limits) if self.limits is not None else quota_view({})
+            if self.limits is None:
+                result["updated"] = 0
+            result["stale"] = stale
+            return result
 
     def _thread(self, ident):
         with self.lock:
@@ -258,7 +308,7 @@ class Companion:
                 pass
         view = {"threads": threads, "next": result.get("nextCursor") or "", "title": "",
                 "id": ident, "body": "", "status": "idle", "page": 0, "pages": 1,
-                "quota": self.refresh_limits(), "draft": {}, "asr": self.asr_ready()}
+                "quota": self.quota_snapshot(), "draft": {}, "asr": self.asr_ready()}
         if ident:
             raw, live, observed, title, status = snapshots.get(ident) or self._thread(ident)
             body = raw["_body"]
@@ -282,6 +332,9 @@ class Companion:
         # Timestamp after RPC work; preserve fractions so repeated syncs do not
         # reset the card clock to the beginning of each second.
         view["now"] = time.time()
+        diagnostic = self.diagnostics.offer()
+        if diagnostic:
+            view["diagnostic"] = diagnostic
         return view
 
     def asr_ready(self):
@@ -538,6 +591,9 @@ class Companion:
             Path(str(output) + ".txt").unlink(missing_ok=True)
 
     def close(self):
+        with self.limits_lock:
+            self.closing = True
+        self.limits_executor.shutdown(wait=True, cancel_futures=True)
         self.executor.shutdown(wait=True, cancel_futures=True)
         with self.lock:
             if self.recording:

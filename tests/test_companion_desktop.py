@@ -193,6 +193,46 @@ class RecoveryTests(unittest.TestCase):
         asyncio.run(exercise())
         self.assertLess(time.monotonic()-started, 1)
 
+    def test_ble_errors_identify_phase_without_exposing_os_error(self):
+        outer = self
+        for phase, expected in (("scan", "扫描超时"), ("connect", "无法连接"),
+                                ("auth", "身份验证"), ("notify", "数据通道")):
+            with self.subTest(phase=phase):
+                attempts, events = [], []
+                class Client:
+                    is_connected = True
+                    def __init__(self, *_, **__): pass
+                    async def connect(self):
+                        if phase == "connect": raise outer.BleakError("private-device-id")
+                    async def disconnect(self): self.is_connected = False
+                    async def read_gatt_char(self, _):
+                        if phase == "auth": raise outer.BleakError("private-device-id")
+                        return b"CPv1-IMA"
+                    async def start_notify(self, *_): raise outer.BleakError("private-device-id")
+                async def scan():
+                    attempts.append(1)
+                    if phase == "scan": raise asyncio.TimeoutError("private-device-id")
+                    return [(outer.card, None)]
+                async def fast(*_): pass
+                with patch.dict(sys.modules, self.modules(Client)), patch.object(transports, "scan_ble", scan), \
+                     patch.object(transports, "retry_delay", fast), self.assertRaises(ClientError) as failure:
+                    asyncio.run(transports.serve_ble(self.service, stop=self.stop, report=lambda *e: events.append(e)))
+                message = str(failure.exception)
+                self.assertEqual(len(attempts), 3)
+                self.assertIn(expected, message)
+                self.assertNotIn("private-device-id", message + str(events))
+                self.assertNotIn("清除配对", message)
+                if phase != "auth": self.assertNotIn("六位", message)
+
+    def test_ble_permission_error_stops_without_pairing_retries(self):
+        error = self.BleakError("private-os-description")
+        error.reason = SimpleNamespace(name="DENIED_BY_SYSTEM")
+        async def scan(): raise error
+        with patch.dict(sys.modules, self.modules(object)), patch.object(transports, "scan_ble", side_effect=scan) as scanner:
+            with self.assertRaisesRegex(ClientError, "电脑管理员"):
+                asyncio.run(transports.serve_ble(self.service, stop=self.stop))
+            self.assertEqual(scanner.call_count, 1)
+
     def test_pairing_failures_bounded_and_protocol_error_not_retried(self):
         for protocol_error in (False, True):
             attempts = []

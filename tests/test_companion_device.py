@@ -22,6 +22,31 @@ def sample(**values):
 
 
 class DeviceTests(unittest.TestCase):
+    def test_draft_monitor_uses_sample_age_not_draft_presence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = DesktopController(Path(directory))
+            service = controller.service = Companion(FakeRpc(), directory)
+            try:
+                controller.update(state="ready")
+                with patch("service.time.monotonic", return_value=100):
+                    service.device_report(sample())
+                for state in ("ready", "transcribing", "uncertain", "sent"):
+                    service.draft = {"state": state}
+                    with patch("desktop_controller.time.monotonic", return_value=105):
+                        self.assertTrue(controller.snapshot()["device"]["fresh"], state)
+                    with patch("desktop_controller.time.monotonic", return_value=116):
+                        self.assertFalse(controller.snapshot()["device"]["fresh"], state)
+                service.draft = {"state": "sending"}
+                with patch("desktop_controller.time.monotonic", return_value=105):
+                    self.assertFalse(controller.snapshot()["device"]["fresh"])
+                service.draft = None
+                service.recording = {"test": True}
+                with patch("desktop_controller.time.monotonic", return_value=105):
+                    self.assertFalse(controller.snapshot()["device"]["fresh"])
+            finally:
+                service.recording = None
+                service.close()
+
     def test_missing_and_failed_sensors_are_not_zero(self):
         data = normalize(sample(die_c=float("nan"), battery_mv=-1, rssi_dbm=127))
         view = presentation(data, 1, True)

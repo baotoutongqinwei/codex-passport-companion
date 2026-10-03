@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bridge"))
@@ -75,6 +76,7 @@ class ServiceTests(unittest.TestCase):
         self.service.draft = {"id": "draft-a", "thread_id": "thread-a", "state": "ready", "text": "检查代码"}
 
     def test_state_pages_and_unicode_bounds(self):
+        self.service.refresh_limits()
         state = self.service.state("thread-a", page=-1)
         self.assertEqual(state["page"], state["pages"]-1)
         self.assertEqual(state["quota"]["primary"]["remaining"], 88)
@@ -93,6 +95,151 @@ class ServiceTests(unittest.TestCase):
             result = quota_view({"rateLimits": {"primary": {"usedPercent": value}}})
             self.assertEqual(result["primary"]["remaining"], -1)
         self.assertEqual(quota_view({"rateLimitsByLimitId": {"codex": {"primary": {"usedPercent": 100}}}})["primary"]["remaining"], 0)
+
+    def test_quota_outage_keeps_chat_draft_and_transport_response(self):
+        from wire import dispatch, Decoder
+        self.ready()
+        original = self.rpc.call
+        for failed_method in ("account/read", "account/rateLimits/read"):
+            self.service.limits_retry_at = 0
+            def failing(method, params=None):
+                if method == failed_method:
+                    raise RpcError("synthetic outage")
+                return original(method, params)
+            with patch.object(self.rpc, "call", side_effect=failing):
+                packet = dispatch(self.service, (1, 0, "/v1/state?thread=thread-a", b""))
+                _, status, _, body = Decoder().feed(packet)[0]
+                result = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertTrue(result["threads"])
+                self.assertIn("回复中文内容", result["body"])
+                self.assertEqual(result["draft"]["text"], "检查代码")
+                self.assertTrue(result["quota"]["stale"])
+                self.assertEqual(result["quota"]["updated"], 0)
+                self.assertEqual(result["quota"]["primary"]["remaining"], -1)
+                self.assertGreater(result["now"], 1700000000)
+                with self.assertRaises(RpcError):
+                    self.service.limits_future.result(timeout=1)
+
+    def test_quota_cache_preserves_timestamp_backs_off_and_recovers(self):
+        with patch("service.time.monotonic", return_value=100):
+            self.service.refresh_limits()
+            initial = copy.deepcopy(self.service.quota_snapshot())
+        original = self.rpc.call
+        attempts = []
+        def failing(method, params=None):
+            if method == "account/rateLimits/read":
+                attempts.append(method)
+                raise RpcError("synthetic outage")
+            return original(method, params)
+        with patch.object(self.rpc, "call", side_effect=failing):
+            with patch("service.time.monotonic", return_value=131):
+                stale = self.service.quota_snapshot()
+                with self.assertRaises(RpcError):
+                    self.service.limits_future.result(timeout=1)
+            with patch("service.time.monotonic", return_value=145):
+                self.service.state("thread-a")
+                self.service.quota_snapshot()
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(stale["updated"], initial["updated"])
+        self.assertEqual(stale["primary"], initial["primary"])
+        self.assertTrue(stale["stale"])
+        self.rpc.limits["rateLimits"]["primary"]["usedPercent"] = 50
+        with patch("service.time.monotonic", return_value=162):
+            self.service.quota_snapshot()
+            self.service.limits_future.result(timeout=1)
+            recovered = self.service.quota_snapshot()
+        self.assertFalse(recovered["stale"])
+        self.assertEqual(recovered["primary"]["remaining"], 50)
+
+    def test_send_never_uses_cached_quota_after_failure(self):
+        self.ready()
+        self.service.refresh_limits(force=True)
+        original = self.rpc.call
+        attempts = []
+        def failing(method, params=None):
+            attempts.append(method)
+            if method == "account/rateLimits/read":
+                raise RpcError("synthetic outage")
+            return original(method, params)
+        with patch.object(self.rpc, "call", side_effect=failing):
+            with self.assertRaises(RpcError):
+                self.action("send", draft_id="draft-a")
+            with self.assertRaises(RpcError):
+                self.action("send", draft_id="draft-a")
+        self.assertEqual(attempts.count("account/rateLimits/read"), 2)
+        self.assertNotIn("turn/start", attempts)
+        self.assertNotIn("thread/queue/add", attempts)
+        self.assertEqual(self.service.draft["state"], "ready")
+
+    def test_slow_quota_does_not_block_state_or_asr_and_only_schedules_once(self):
+        self.ready()
+        entered, release = threading.Event(), threading.Event()
+        original = self.rpc.call
+        reads = []
+        def slow(method, params=None):
+            if method == "account/rateLimits/read":
+                reads.append(method)
+                entered.set()
+                if not release.wait(3): raise RpcError("test deadline")
+            return original(method, params)
+        with patch.object(self.rpc, "call", side_effect=slow), ThreadPoolExecutor() as worker:
+            try:
+                cold = self.service.quota_snapshot()
+                self.assertTrue(cold["stale"])
+                self.assertEqual(cold["updated"], 0)
+                self.assertTrue(entered.wait(1))
+                future = self.service.limits_future
+                for _ in range(10):
+                    result = worker.submit(self.service.state, "thread-a").result(timeout=1)
+                    self.assertEqual(result["draft"]["text"], "检查代码")
+                    self.assertTrue(result["threads"])
+                    self.assertIs(self.service.limits_future, future)
+                self.assertEqual(self.service.executor.submit(lambda: "ASR available").result(timeout=1), "ASR available")
+                self.assertEqual(len(reads), 1)
+            finally:
+                release.set()
+            future.result(timeout=1)
+        self.assertFalse(self.service.quota_snapshot()["stale"])
+
+    def test_send_after_background_refresh_still_checks_new_quota(self):
+        self.ready()
+        entered, release, sending = threading.Event(), threading.Event(), threading.Event()
+        original = self.rpc.call
+        reads = []
+        def changing(method, params=None):
+            if method == "account/rateLimits/read":
+                reads.append(method)
+                if len(reads) == 1:
+                    entered.set()
+                    if not release.wait(3): raise RpcError("test deadline")
+                    return {"rateLimits": {"primary": {"usedPercent": 10}}}
+                return {"rateLimits": {"primary": {"usedPercent": 100}}}
+            return original(method, params)
+        def send():
+            sending.set()
+            return self.action("send", draft_id="draft-a")
+        with patch.object(self.rpc, "call", side_effect=changing), ThreadPoolExecutor() as worker:
+            try:
+                self.service.quota_snapshot()
+                self.assertTrue(entered.wait(1))
+                result = worker.submit(send)
+                self.assertTrue(sending.wait(1))
+                self.assertFalse(result.done())
+                self.assertNotIn("turn/start", [m for m, _ in self.rpc.calls])
+            finally:
+                release.set()
+            with self.assertRaisesRegex(ClientError, "额度已用完"):
+                result.result(timeout=1)
+        self.assertEqual(len(reads), 2)
+        self.assertNotIn("turn/start", [m for m, _ in self.rpc.calls])
+        self.assertEqual(self.service.draft["state"], "ready")
+
+    def test_closed_service_never_schedules_quota_reads(self):
+        self.service.close()
+        self.assertTrue(self.service.quota_snapshot()["stale"])
+        self.assertIsNone(self.service.limits_future)
+        self.assertEqual(self.rpc.calls, [])
 
     def test_record_sequence_duplicate_and_limit(self):
         ident = self.action("record_start", thread_id="thread-a")["record_id"]

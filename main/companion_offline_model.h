@@ -12,3 +12,4 @@ int64_t cp_focus_remaining(cp_focus_t *focus, int64_t now_ms);
 void cp_stopwatch_toggle(cp_stopwatch_t *watch, int64_t now_ms);
 int64_t cp_stopwatch_elapsed(const cp_stopwatch_t *watch, int64_t now_ms);
 void cp_offline_clock(char out[9], int seconds, int64_t since_ms, int64_t now_ms);
+bool cp_offline_usb_time(const char *line, int64_t *epoch_ms, int *seconds, int64_t *since_ms, int64_t now_ms);

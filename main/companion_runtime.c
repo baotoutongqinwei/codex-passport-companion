@@ -2,9 +2,9 @@
 #include "companion_transport.h"
 #include "companion_adpcm.h"
 #include "companion_device.h"
+#include "companion_battery_log.h"
 #include "sdkconfig.h"
 #include "bsp_audio.h"
-#include "bsp_battery.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -27,6 +27,10 @@ static SemaphoreHandle_t s_lock;
 static QueueHandle_t s_commands, s_audio_jobs;
 static StreamBufferHandle_t s_pcm;
 static char s_response[8193];
+static char s_battery_payload[1536];
+#if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
+static char s_diagnostic_payload[768];
+#endif
 static char s_thread[CP_ID_SIZE], s_cursor[CP_CURSOR_SIZE];
 static int s_page = -1;
 static unsigned s_selection_version;
@@ -166,6 +170,59 @@ static int64_t timestamp(cJSON *root, const char *key) {
     return cJSON_IsNumber(item) ? (int64_t)item->valuedouble : 0;
 }
 
+static void sync_time(cJSON *json) {
+    cJSON *server_time=cJSON_GetObjectItemCaseSensitive(json,"now");
+    if (!cJSON_IsNumber(server_time) || server_time->valuedouble<=1700000000 ||
+        server_time->valuedouble>=4102444800.0) return;
+    int64_t seconds=(int64_t)server_time->valuedouble;
+    struct timeval synced={.tv_sec=seconds,
+        .tv_usec=(long)((server_time->valuedouble-seconds)*1000000)};
+    if (settimeofday(&synced,NULL)==0) {
+        cp_battery_log_set_epoch((int64_t)(server_time->valuedouble*1000),esp_timer_get_time()/1000);
+        lock(); s_state.clock_synced=true; unlock();
+    }
+}
+
+static bool send_battery(uint32_t *cursor, bool *more) {
+    uint32_t log_id=0, last=0;
+    int length=cp_battery_log_json(*cursor,s_battery_payload,sizeof(s_battery_payload),&log_id,&last);
+    int status=0;
+    if (length<0 || !cp_transport_request("/v1/battery",s_battery_payload,length,false,
+                                         s_response,sizeof(s_response),&status) || status!=200) return false;
+    cJSON *reply=cJSON_Parse(s_response);
+    bool acknowledged=reply && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(reply,"ok")) &&
+                       timestamp(reply,"log_id")==log_id && timestamp(reply,"ack")==last;
+    if (acknowledged) {
+        sync_time(reply);
+        *more=last>*cursor;
+        *cursor=last;
+    }
+    cJSON_Delete(reply);
+    return acknowledged;
+}
+
+#if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
+static void send_diagnostic(const char *id, const char *name) {
+    cp_device_info_t device;
+    cp_device_snapshot(&device);
+    char result[384];
+    if (!cp_device_diagnostic(&device,name,esp_timer_get_time(),result)) return;
+    cJSON *json=cJSON_CreateObject();
+    if (!json) return;
+    bool ready=cJSON_AddStringToObject(json,"id",id) &&
+               cJSON_AddStringToObject(json,"name",name) &&
+               cJSON_AddStringToObject(json,"text",result);
+    if (ready && cJSON_PrintPreallocated(json,s_diagnostic_payload,sizeof(s_diagnostic_payload),false)) {
+        int status=0;
+        // A lost acknowledgement is harmless: the host offers the same read-only
+        // command again until it sees the matching result.
+        cp_transport_request("/v1/diagnostic-result",s_diagnostic_payload,strlen(s_diagnostic_payload),false,
+                             s_response,sizeof(s_response),&status);
+    }
+    cJSON_Delete(json);
+}
+#endif
+
 static void poll_state(void) {
     char thread[CP_ID_SIZE], cursor[CP_CURSOR_SIZE], encoded[CP_CURSOR_SIZE*3];
     int page; unsigned version;
@@ -175,16 +232,7 @@ static void poll_state(void) {
     snprintf(path, sizeof(path), "/v1/state?thread=%s&cursor=%s&page=%d", thread, encoded, page);
     cJSON *json = request(path, NULL, 0, false);
     if (!json) return;
-    cJSON *server_time = cJSON_GetObjectItemCaseSensitive(json, "now");
-    if (cJSON_IsNumber(server_time) && server_time->valuedouble > 1700000000 &&
-        server_time->valuedouble < 4102444800.0) {
-        int64_t seconds = (int64_t)server_time->valuedouble;
-        struct timeval synced = { .tv_sec = seconds,
-            .tv_usec = (long)((server_time->valuedouble - seconds)*1000000) };
-        if (settimeofday(&synced, NULL) == 0) {
-            lock(); s_state.clock_synced = true; unlock();
-        }
-    }
+    sync_time(json);
     memset(&s_incoming, 0, sizeof(s_incoming));
     cJSON *threads = cJSON_GetObjectItemCaseSensitive(json, "threads");
     if (!cJSON_IsArray(threads)) { cJSON_Delete(json); message("对话数据格式错误"); return; }
@@ -212,6 +260,7 @@ static void poll_state(void) {
     s_incoming.pages = number(json, "pages", 1);
     s_incoming.asr_ready = cp_transport_audio_ready() && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "asr"));
     cJSON *quota = cJSON_GetObjectItemCaseSensitive(json, "quota");
+    s_incoming.quota_stale = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(quota,"stale"));
     for (int i = 0; i < 2; ++i) {
         cJSON *window = cJSON_GetObjectItemCaseSensitive(quota, i ? "secondary" : "primary");
         s_incoming.remaining[i] = number(window, "remaining", -1);
@@ -240,6 +289,12 @@ static void poll_state(void) {
     string(alert, "title", alert_title, sizeof(alert_title));
     string(alert, "kind", alert_kind, sizeof(alert_kind));
     bool sound = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(alert, "sound"));
+#if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
+    cJSON *diagnostic=cJSON_GetObjectItemCaseSensitive(json,"diagnostic");
+    char diagnostic_id[17], diagnostic_name[16];
+    string(diagnostic,"id",diagnostic_id,sizeof(diagnostic_id));
+    string(diagnostic,"name",diagnostic_name,sizeof(diagnostic_name));
+#endif
     cJSON_Delete(json);
     lock();
     if (alert_id[0] && strcmp(alert_id, s_state.alert_id) && s_state.mode == CP_IDLE) {
@@ -267,6 +322,10 @@ static void poll_state(void) {
         }
     }
     unlock();
+#if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
+    if (diagnostic_id[0] && diagnostic_name[0])
+        send_diagnostic(diagnostic_id,diagnostic_name);
+#endif
 }
 
 static void capture_task(void *arg) {
@@ -327,7 +386,9 @@ static void network_task(void *arg) {
 #if CONFIG_PASSPORT_MODE_BLE
     uint8_t compressed[1030];
 #endif
-    int64_t last_poll = 0, last_battery = 0;
+    int64_t last_poll = 0, last_health = 0;
+    int64_t next_battery=0;
+    uint32_t battery_cursor=0;
 #if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
     int64_t next_device = 0;
 #endif
@@ -338,6 +399,7 @@ static void network_task(void *arg) {
         bool wifi=cp_transport_connected();
         lock(); s_state.wifi=wifi; bool done=s_capture_done; bool failed=s_capture_error; unlock();
         if (!wifi) {
+            next_battery=0; battery_cursor=0;
 #if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
             next_device = 0;
 #endif
@@ -418,9 +480,17 @@ static void network_task(void *arg) {
         } else if (wifi) {
             lock(); bool force = s_force; s_force = false; unlock();
             if (force || now - last_poll > 1500000) { poll_state(); last_poll = esp_timer_get_time(); }
+            lock(); bool background = cp_telemetry_allowed(s_state.mode); unlock();
+            if (background && now>=next_battery && uxQueueMessagesWaiting(s_commands)==0) {
+                bool more=false;
+                bool ok=send_battery(&battery_cursor,&more);
+                if (!ok || !more) battery_cursor=0;
+                // Voice commands always take priority. A periodic replay also
+                // recovers a restarted helper; the Mac deduplicates durable rows.
+                next_battery=esp_timer_get_time()+(ok ? (more ? 250000 : 300000000) : 60000000);
+            }
 #if CONFIG_PASSPORT_MODE_USB || CONFIG_PASSPORT_MODE_BLE
-            lock(); bool idle = s_state.mode == CP_IDLE; unlock();
-            if (idle && now >= next_device && uxQueueMessagesWaiting(s_commands) == 0) {
+            if (background && now >= next_device && uxQueueMessagesWaiting(s_commands) == 0) {
                 char device[1536];
                 int status = 0;
                 if (cp_device_json(device, sizeof(device))) {
@@ -428,19 +498,17 @@ static void network_task(void *arg) {
                     // Old helpers may reject this optional endpoint without UI errors.
                     cp_transport_request("/v1/device", device, strlen(device), false,
                                          s_response, sizeof(s_response), &status);
-                }
-                next_device = esp_timer_get_time() + (status == 200 ? 5000000 : 60000000);
+                    next_device = esp_timer_get_time() + (status == 200 ? 5000000 : 60000000);
+                } else next_device = esp_timer_get_time() + 250000;
             }
 #endif
         }
-        if (now - last_battery > 30000000) {
-            int battery = bsp_battery_soc();
-            lock(); s_state.battery = battery; unlock();
+        if (now - last_health > 30000000) {
             ESP_LOGI(TAG, "heap=%lu minimum=%lu largest=%lu network_stack=%u",
                      (unsigned long)esp_get_free_heap_size(), (unsigned long)esp_get_minimum_free_heap_size(),
                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
                      (unsigned)uxTaskGetStackHighWaterMark(NULL));
-            last_battery = now;
+            last_health = now;
         }
         vTaskDelay(pdMS_TO_TICKS(record_id[0] ? 5 : 30));
     }
@@ -452,7 +520,6 @@ void cp_runtime_start(const cp_config_t *config) {
     s_commands = xQueueCreate(4, sizeof(command_t));
     s_pcm = xStreamBufferCreate(8192, 1024);
     ESP_ERROR_CHECK(s_lock && s_audio_jobs && s_commands && s_pcm ? ESP_OK : ESP_ERR_NO_MEM);
-    s_state.battery = -1;
     s_state.view.remaining[0] = s_state.view.remaining[1] = -1;
 #if CONFIG_PASSPORT_MODE_WIFI
     s_state.configured = config != NULL;
@@ -460,7 +527,6 @@ void cp_runtime_start(const cp_config_t *config) {
 #else
     s_state.configured=true;
 #endif
-    s_state.battery=bsp_battery_soc();
     s_audio_ready=bsp_audio_init()==ESP_OK && bsp_audio_set_format(16000,16,1)==ESP_OK;
     if (s_audio_ready) bsp_audio_set_volume(30);
     esp_err_t result=cp_transport_start(config);

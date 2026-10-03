@@ -195,5 +195,17 @@ class FirmwareTests(unittest.TestCase):
         self.assertIsNotNone(c.service)
         c.service.close()
 
+    def test_offline_flash_syncs_after_verified_write(self):
+        import desktop_controller as dc
+        c = self.controller()
+        c.firmware["profile"] = "offline"
+        order = []
+        with patch.object(dc, "flash_firmware", side_effect=lambda *_: order.append("flash")), \
+             patch.object(dc, "sync_clock", side_effect=lambda identity, wait_seconds: order.append("clock") or True):
+            c.flash(c.firmware["sha256"], DEVICE, True)
+            c.firmware_worker.join(2)
+        self.assertEqual(order, ["flash", "clock"])
+        self.assertIn("已自动校时", c.snapshot()["flash_detail"])
+
 
 if __name__ == "__main__": unittest.main()

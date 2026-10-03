@@ -4,6 +4,20 @@
 #include <string.h>
 
 int main(void) {
+    const cp_mode_t protected_modes[] = {CP_STARTING,CP_READY,CP_RECORDING,CP_FINISHING,CP_SENDING};
+    for (unsigned i=0;i<sizeof(protected_modes)/sizeof(protected_modes[0]);++i) {
+        assert(!cp_telemetry_allowed(protected_modes[i]));
+        assert(!cp_screen_should_dim(protected_modes[i],3600000000LL));
+    }
+    assert(cp_telemetry_allowed(CP_TRANSCRIBING));
+    assert(!cp_screen_should_dim(CP_TRANSCRIBING,3600000000LL));
+    assert(!cp_telemetry_allowed((cp_mode_t)99));
+    // Retain a draft for an hour: telemetry continues and the screen can sleep.
+    for (int64_t elapsed=0;elapsed<=3600000000LL;elapsed+=30000000) {
+        assert(cp_telemetry_allowed(CP_REVIEW));
+        assert(cp_screen_should_dim(CP_REVIEW,elapsed)==(elapsed>=60000000));
+        assert(cp_screen_should_dim(CP_IDLE,elapsed)==(elapsed>=60000000));
+    }
     int16_t samples[512] = {0};
     assert(cp_pcm_level(samples, 0) == 0 && cp_pcm_level(samples, 512) == 0);
     for (unsigned i=0;i<512;++i) samples[i]=20000;

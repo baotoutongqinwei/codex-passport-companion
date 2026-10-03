@@ -88,7 +88,7 @@ def presentation(data, age, connected, recording=False):
     d = data or {}
     fresh = connected and age is not None and age <= 15 and not recording
     if recording:
-        status = "录音／处理语音时暂停采样，显示上次数据"
+        status = "录音／发送时暂停采样，显示上次数据"
     elif not connected:
         status = "未连接 · 数据不会继续刷新" if not d else "连接已断开 · 以下为上次数据"
     elif age is None:

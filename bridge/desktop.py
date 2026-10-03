@@ -18,6 +18,7 @@ from PyObjCTools import AppHelper
 from desktop_controller import DesktopController
 from local_data import data_root
 from firmware import bundled_firmware, PROFILE_NAMES
+from diagnostics import COMMANDS
 
 
 def asset_path(name):
@@ -59,6 +60,7 @@ class Surface(A.NSView):
 class WindowDelegate(NSObject):
     def applicationDidFinishLaunching_(self, _notification):
         self.controller = DesktopController(data_root())
+        self.controller.start_clock_sync()
         self.window = A.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             ((0, 0), (860, 604)), A.NSWindowStyleMaskTitled | A.NSWindowStyleMaskClosable |
             A.NSWindowStyleMaskMiniaturizable, A.NSBackingStoreBuffered, False)
@@ -84,7 +86,8 @@ class WindowDelegate(NSObject):
         self.nav_panels = []
         for index, (name, symbol) in enumerate((("连接卡片", "rectangle.connected.to.line.below"),
                                                 ("语音模型", "waveform"), ("提醒设置", "bell"),
-                                                ("固件烧录", "arrow.down.doc"), ("设备信息", "cpu"))):
+                                                ("固件烧录", "arrow.down.doc"), ("设备信息", "cpu"),
+                                                ("诊断控制台", "terminal"))):
             background = self.surface(sidebar, 14, 209+index*52, 166, 42, "nav")
             button = self.button(background, "  "+name, "navigate:", 14, 0, 142, height=42)
             button.setTag_(index)
@@ -95,14 +98,14 @@ class WindowDelegate(NSObject):
             self.nav.append(button)
             self.nav_panels.append(background)
         self.label(sidebar, "语音识别留在本机", 24, 543, 158, 20, 11, muted=True)
-        self.label(sidebar, "版本 0.5.0", 24, 568, 140, 18, 11, muted=True)
+        self.label(sidebar, "版本 0.9.2", 24, 568, 140, 18, 11, muted=True)
 
         self.label(self.root, "CODEX PASSPORT", 226, 27, 330, 18, 10, muted=True)
         self.page_title = self.label(self.root, "", 226, 53, 476, 34, 26, True)
         self.page_subtitle = self.label(self.root, "", 226, 96, 600, 22, 13, muted=True)
         self.badge = self.label(self.root, "待连接", 720, 62, 112, 24, 12, True)
         self.badge.setAlignment_(A.NSTextAlignmentRight)
-        self.pages = [self.surface(self.root, 226, 132, 608, 352, "background") for _ in range(5)]
+        self.pages = [self.surface(self.root, 226, 132, 608, 352, "background") for _ in range(6)]
         self.fields = {}
         connection = self.surface(self.pages[0], 0, 0, 608, 172, "hero")
         self.connection_title = self.label(connection, "准备连接", 20, 19, 530, 28, 19, True)
@@ -204,7 +207,7 @@ class WindowDelegate(NSObject):
         scroll.setDrawsBackground_(False)
         scroll.setAutomaticallyAdjustsContentInsets_(False)
         self.pages[4].addSubview_(scroll)
-        monitor = self.surface(None, 0, 0, 594, 704, "background")
+        monitor = self.surface(None, 0, 0, 594, 774, "background")
         scroll.setDocumentView_(monitor)
         self.device_fields = {}
         summary = self.surface(monitor, 0, 0, 594, 110, "hero")
@@ -224,7 +227,11 @@ class WindowDelegate(NSObject):
         for key, title, note, x in (("battery", "电池", "", 0), ("temperature", "芯片温度", "非环境／电池温度", 202),
                                      ("uptime", "本次运行", "时 : 分 : 秒", 404)):
             panel = self.surface(monitor, x, 264, 190, 98)
-            self.label(panel, title, 16, 12, 158, 20, 12, True)
+            if key == "battery":
+                history = self.button(panel, "电池 · 查看历史 ›", "showBatteryChart:", 12, 9, 170, height=26)
+                history.setBordered_(False); history.setAlignment_(A.NSTextAlignmentLeft)
+            else:
+                self.label(panel, title, 16, 12, 158, 20, 12, True)
             self.device_fields[key] = self.label(panel, "", 16, 38, 158, 26, 21, True)
             field = self.label(panel, note, 16, 72, 158, 20, 11, muted=True)
             if key == "battery": self.device_fields["voltage"] = field
@@ -234,7 +241,32 @@ class WindowDelegate(NSObject):
                 ("tasks", "任务与栈"), ("reset", "上次复位"), ("build", "构建信息"))):
             self.label(details, title, 16, 13+i*30, 100, 22, 12, muted=True)
             self.device_fields[key] = self.label(details, "", 117, 13+i*30, 460, 22, 12)
-        self.label(monitor, "内存按可分配堆统计；NVS 按条目统计，不等于文件空间。\nCPU 占用、充电状态／电流暂不可读；Wi-Fi 与离线版暂不上报。", 4, 650, 580, 46, 11, muted=True)
+        self.label(monitor, "电量历史 · 四种固件断开连接后均可记录", 4, 646, 500, 20, 12, True)
+        self.batteryHistory = self.label(monitor, "", 4, 671, 580, 36, 11, muted=True)
+        self.button(monitor, "查看电量图表…", "showBatteryChart:", 4, 710, 170, height=28)
+        self.openBatteryHistoryButton = self.button(monitor, "打开 CSV 记录", "openBatteryHistory:", 186, 710, 170, height=28)
+        self.label(monitor, "内存按可分配堆统计；NVS 按条目统计，不等于文件空间。\nCPU 占用、充电状态／电流暂不可读。", 4, 742, 580, 32, 10, muted=True)
+
+        console = self.surface(self.pages[5], 0, 0, 608, 93, "hero")
+        self.label(console, "卡片只读诊断", 18, 12, 235, 23, 15, True)
+        self.label(console, "通过当前 USB／蓝牙连接发送；不执行 Mac 终端命令。", 18, 37, 565, 19, 11, muted=True)
+        self.commandPicker = A.NSPopUpButton.alloc().initWithFrame_pullsDown_(((16, 61), (405, 28)), False)
+        for title in COMMANDS.values(): self.commandPicker.addItemWithTitle_(title)
+        console.addSubview_(self.commandPicker)
+        self.runDiagnosticButton = self.button(console, "执行诊断", "runDiagnostic:", 441, 59, 148, height=30)
+        log_scroll = A.NSScrollView.alloc().initWithFrame_(((0, 106), (608, 218)))
+        log_scroll.setHasVerticalScroller_(True)
+        log_scroll.setDrawsBackground_(False)
+        self.consoleText = A.NSTextView.alloc().initWithFrame_(((0, 0), (590, 218)))
+        self.consoleText.setEditable_(False)
+        self.consoleText.setSelectable_(True)
+        self.consoleText.setFont_(A.NSFont.monospacedSystemFontOfSize_weight_(11, A.NSFontWeightRegular))
+        self.consoleText.setDrawsBackground_(False)
+        log_scroll.setDocumentView_(self.consoleText)
+        self.pages[5].addSubview_(log_scroll)
+        self.consoleRevision = -1
+        self.label(self.pages[5], "只记录请求类别、状态和诊断结果；不保存语音、对话或令牌。最近 160 条仅在本次运行中保留。",
+                   3, 328, 602, 24, 10, muted=True)
 
         status = self.surface(self.root, 226, 500, 608, 82)
         self.label(status, "当前状态", 17, 11, 140, 20, 11, True)
@@ -283,11 +315,12 @@ class WindowDelegate(NSObject):
     @objc.python_method
     def show_page(self, index):
         self.page = index
-        titles = ("连接你的卡片", "让语音留在本机", "按自己的节奏接收提醒", "给卡片换上新固件", "看看卡片的运行状态")
+        titles = ("连接你的卡片", "让语音留在本机", "按自己的节奏接收提醒", "给卡片换上新固件", "看看卡片的运行状态", "查看通信与诊断")
         hints = ("选择连接方式，同步对话、时间与额度。", "使用免费离线模型，将你的声音转成简体中文。",
                  "任务提醒与声音开关立即生效，修改时段后记得保存。",
                  "插上 USB 数据线，选择固件；不需要安装开发环境。",
-                 "硬件、资源占用与固件版本 · USB／蓝牙本机监控。")
+                 "硬件、资源占用与固件版本 · USB／蓝牙本机监控。",
+                 "连接事件、请求结果与卡片原生只读命令。")
         self.page_title.setStringValue_(titles[index])
         self.page_subtitle.setStringValue_(hints[index])
         for i, page in enumerate(self.pages): page.setHidden_(i != index)
@@ -305,12 +338,22 @@ class WindowDelegate(NSObject):
 
     def refresh_(self, _timer):
         view = self.controller.snapshot()
+        console = view["console"]
+        if console["revision"] != self.consoleRevision:
+            self.consoleRevision = console["revision"]
+            lines = "\n".join(console["lines"])
+            self.consoleText.setString_(lines)
+            if self.page == 5: self.consoleText.scrollRangeToVisible_((len(lines), 0))
+        self.runDiagnosticButton.setEnabled_(view["state"] in ("ready", "connected", "service_error")
+                                             and not console["pending"] and not view["flashing"])
         for key, field in self.device_fields.items():
             field.setStringValue_(view["device"][key])
         for key, bar in self.device_bars.items():
             bar.setDoubleValue_(view["device"][key+"_percent"])
         upgrade = view["upgrade"]
         self.deviceVersionHint.setStringValue_(f"{upgrade['source']} {upgrade['version']} · {upgrade['message']}")
+        self.batteryHistory.setStringValue_(view["battery_history"])
+        self.openBatteryHistoryButton.setEnabled_((self.controller.root / "battery-history.csv").is_file())
         self.deviceUpgrade.setTitle_("查看升级…" if upgrade["kind"] == "upgrade" else "查看固件…")
         for key, field in self.fields.items():
             field.setStringValue_(view[key])
@@ -322,6 +365,7 @@ class WindowDelegate(NSObject):
         state = view["state"]
         badge = {"ready": "已连接", "connected": "正在同步", "checking": "自检中",
                  "waiting": "等待卡片", "scanning": "正在寻找", "pairing": "等待配对",
+                 "connecting": "正在连接", "authenticating": "验证卡片", "subscribing": "建立通道",
                  "reconnecting": "重新连接", "error": "需要处理", "service_error": "需要处理", "flashing": "正在烧录"}.get(state, "待连接")
         self.badge.setStringValue_(badge)
         self.badge.setTextColor_(A.NSColor.systemGreenColor() if state == "ready" else
@@ -364,6 +408,13 @@ class WindowDelegate(NSObject):
 
     def check_(self, _sender):
         self.controller.doctor()
+
+    def runDiagnostic_(self, _sender):
+        name = tuple(COMMANDS)[self.commandPicker.indexOfSelectedItem()]
+        try:
+            self.controller.diagnostic_command(name)
+        except ValueError as exc:
+            self.controller.diagnostics.add("错误", str(exc))
 
     def deviceFirmware_(self, _sender):
         self.show_page(3)
@@ -417,6 +468,15 @@ class WindowDelegate(NSObject):
 
     def flashLog_(self, _sender):
         A.NSWorkspace.sharedWorkspace().openFile_(str(self.controller.root / "firmware-last.log"))
+
+    def openBatteryHistory_(self, _sender):
+        A.NSWorkspace.sharedWorkspace().openFile_(str(self.controller.root / "battery-history.csv"))
+
+    def showBatteryChart_(self, _sender):
+        if not getattr(self, "battery_chart", None):
+            from battery_chart_view import BatteryHistoryWindow
+            self.battery_chart = BatteryHistoryWindow.alloc().init().setup(self.controller.root)
+        self.battery_chart.show()
 
     def flash_(self, _sender):
         firmware = self.controller.firmware

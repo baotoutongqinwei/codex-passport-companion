@@ -32,8 +32,8 @@ downloads a model automatically or calls a paid recognition service.
 
 ## Window and icon
 
-Version 0.5.0 uses five native macOS pages selected from the sidebar: connection, speech
-model, notification settings, firmware flashing and device information. Connection shows device, Codex and account status; speech
+Version 0.9.2 retains six native macOS pages selected from the sidebar: connection, speech
+model, notification settings, firmware flashing, device information and diagnostic console. Connection shows device, Codex and account status; speech
 installs or reuses the local model; notifications exposes switches and quiet hours. A persistent
 status area retains progress and errors across pages. Navigation does not disconnect the card.
 The interface follows system light/dark appearance and uses macOS fonts for Chinese.
@@ -42,6 +42,23 @@ The mint passport icon appears in the Dock, Finder and window branding.
 The new device page requires replacing the Mac app and flashing matching 0.5.0 firmware.
 Handle recordings and unsent drafts before normally quitting the old app.
 Existing model paths and notification preferences remain in the original data directory.
+
+## Diagnostic console (desktop 0.6.0)
+
+The sixth sidebar page shows a bounded in-memory history of connection changes,
+card request categories and status codes, and errors. Successful state/device
+polls are sampled to one line per 30 seconds; audio chunks are not logged. The
+last 160 entries disappear when the app exits. No conversation text, speech
+payloads, request IDs, tokens or Wi-Fi credentials are logged or exported.
+
+With USB or authenticated BLE connected to firmware 0.7.0, select one of four
+native read-only card commands: device overview, battery/temperature,
+memory/tasks, or firmware identity. The card executes the command on its existing
+network worker and returns a bounded result on the same connection. One command
+may be pending at a time; a missing reply times out after 30 seconds. Older
+firmware still shows connection events but cannot reply to these commands. The
+offline card profile accepts USB time sync only, and the Wi-Fi CLI does not expose this
+desktop page. The console does not run arbitrary Mac shell commands.
 
 ## Flash firmware from the window
 
@@ -62,6 +79,76 @@ Existing model paths and notification preferences remain in the original data di
 5. Keep USB connected until writing and hash verification finish. The card reboots; return to
    the connection page and select the newly installed mode. A local log is available from the
    firmware page. On failure, read the message and log before retrying; no automatic write retry occurs.
+
+Desktop 0.8.0 attempts to set the clock after flashing offline firmware 0.9.0.
+While the desktop app is running, plugging or reconnecting that offline card by
+USB also syncs it, with an hourly refresh for drift. The Mac first checks the
+card's offline-mode reply, then sends a UTC millisecond timestamp; the card
+displays fixed UTC+8. No Codex login, speech model or network is required for
+time sync. A cable alone cannot transfer time when the desktop app is closed.
+If the post-flash acknowledgement is missing, the flash itself succeeded;
+leave the USB cable connected for the app to retry. Older offline firmware
+still supports manual clock setting only.
+
+## Draft standby and quota failures (desktop 0.9.1, firmware 0.10.1)
+
+A retained draft dims after 60 seconds without input. A function key wakes it without
+sending; confirmation requires another deliberate press. Draft review and Mac
+transcription permit sampling, device monitoring and replay. Preparation, capture,
+finishing and sending defer this work. Quota-read failures preserve chat and draft
+updates. The quota page marks cached or unavailable data, keeps its real timestamp,
+and retries after approximately 30 seconds. Sending always forces a fresh quota
+check; failure retains the draft without sending or queueing it.
+
+## Battery history across all profiles (desktop 0.9.0, firmware 0.10.0)
+
+Every profile saves fuel-gauge percentage and voltage on the powered card while
+disconnected or screen-off. BLE and USB send replay-safe batches on their normal
+connection; Wi-Fi sends them to the authenticated TLS helper. Offline keeps the
+automatic USB import without Codex login, network or a speech model. Capture preparation, recording, finishing and sending
+temporarily defer sampling, Flash writes and upload; stale readings are not
+stamped as new. The same NVS log and factory card identity survive compatible,
+configuration-preserving profile changes. Device Info shows the latest reading
+and a bounded one-hour gauge decline. Open the
+complete CSV from that page. The packaged app saves it at
+`~/Library/Application Support/CodexPassport/battery-history.csv`; source runs
+default to `.local/battery-history.csv` in the project, or use
+`PASSPORT_DATA_DIR`. It stays on the Mac and repeated imports are deduplicated.
+
+For the Wi-Fi CLI to share the packaged desktop chart, start it with
+`PASSPORT_DATA_DIR="$HOME/Library/Application Support/CodexPassport"`.
+The Wi-Fi configuration and TLS files keep their existing project location.
+Only one helper owns the transport; the desktop can still display its chart.
+Each batch has at most 16 samples and is acknowledged only after the Mac saves
+it. Reconnection replays retained samples; a five-minute replay also recovers
+helper restarts. A missing account/quota response does not reject battery uploads
+once the helper is running. An old helper may reject this optional endpoint;
+the card keeps logging and retries later.
+
+Normal sampling is every five minutes, with denser low-battery/abrupt-drop
+sampling and a 192-entry ring. Before Mac clock sync, `recorded_utc` and
+`recorded_utc8` remain
+blank while boot uptime is retained. The board has no verified charging-state
+or current sensor. A one-hour decline describes gauge readings, not measured
+discharge current. See the [offline profile](codex-modes.md#battery-history-while-unplugged-offline-firmware-090).
+
+### Battery chart (desktop 0.8.1)
+
+In Device Info, click the battery tile's history button or the chart button below
+the hardware details. The native window follows the Mac appearance and reads the
+existing local CSV without extra dependencies. Choose a card and the last 24 hours
+(15-minute bars) or seven days (two-hour bars). Each bar uses the last actual
+reading in that interval; empty intervals stay blank. Click a bar to inspect the
+UTC+8 timestamp, percentage and voltage. Zero-percent samples remain visible;
+readings at or below 20% are red. Latest reading and period minimum are shown.
+
+File changes refresh approximately every ten seconds while the window is open;
+disk parsing runs off the UI thread. Records from different cards stay separate.
+Uncalibrated, malformed and future-dated rows are excluded with visible counts,
+and duplicate imports are ignored. The chart does not infer charging, fill gaps
+or estimate remaining battery life. Seven days is the desktop viewing range;
+the card's 192-entry retention limit still applies. All-profile capture and upload
+require firmware 0.10.0; offline 0.9.0 USB imports remain compatible.
 
 Only standard project layouts are supported: NVS at `0x9000`, PHY at `0xF000`, factory app at
 `0x10000`. App-only, oversized, corrupted, wrong-chip, custom-layout and extra-data images are
@@ -116,8 +203,9 @@ recording hint from batch 006. Wi-Fi and offline firmware do not report monitori
 | Temperature | Optional ESP32-C3 die sensor via the BSP, configured for 10–80 °C; not ambient or battery temperature. The sensor is disabled after each read. |
 | Runtime | Boot uptime, reset reason, task count and minimum free stack for the communication task. BLE RSSI is available; USB signal strength is not applicable. |
 
-Sampling uses the existing physical transport worker roughly every five seconds
-while idle. Recording and draft handling pause sampling; age and connection
+With firmware 0.6.0, the card UI worker samples outside its LVGL lock roughly
+every five seconds while idle; card displays and USB/BLE reports share that
+sample. The transport worker only serializes the synchronized cache. Preparation, capture, finishing and sending pause sampling; draft review and Mac transcription permit it; age and connection
 status label stale data explicitly. Reconnecting clears the previous device's
 displayed sample. No recording, account or conversation content is included.
 There is no HTTP monitoring endpoint, cloud upload, history file or new listener.
@@ -154,7 +242,7 @@ version may create a different build and is not silently classified as newer.
 | Bluetooth off / permission denied | Stop with the specific setting or administrator action. Resolve and click connect. |
 | Pairing failure | Pause after three connection/pairing failures. Check PIN; if the Mac forgot the card, clear pairing on the card connection-help page and retry. |
 | Protocol mismatch | Stop and request matching firmware; the user can explicitly choose the USB flashing page. Never flash automatically. |
-| Quota backend unavailable | Keep the link, periodically retry state, show an actionable message. Never invent quota. |
+| Quota backend unavailable | Keep chat and drafts updating, label cached/unknown quota, retry after 30 seconds; sending still requires a fresh check. |
 | Pause | Drain the current RPC and disconnect. Keep drafts, discard partial audio. |
 | Quit | Warn about recordings, unsent/uncertain drafts or tracked queue entries. Exit clears memory, but does not recall accepted Codex messages. |
 
@@ -193,3 +281,20 @@ are separate checks, not proved by host tests.
 preservation, reset write scope, device substitution, interrupted writes, process timeout,
 pending-work protection, connection draining and ownership. Static-only environments install
 `bridge/flash-requirements.txt` as well as `bridge/requirements.txt`.
+
+## Desktop connection resilience (0.9.2)
+
+A separate worker refreshes quota with at most one background read in flight. UI/card state requests return the cache immediately, even during a slow quota call. A cold cache is unknown; failures back off for about 30 seconds. Sending still waits for a forced fresh check, retaining the draft without sending or queuing if that fails. Recognition uses a separate worker.
+
+Monitoring uses sample age: connected samples up to 15 seconds old remain fresh during draft review and transcription. Recording/sending explicitly pause sampling; older samples remain stale. Older firmware that stops sampling cannot falsely appear live.
+
+| Failure phase | Guidance |
+| --- | --- |
+| Scan | Check the Mac Bluetooth switch and application permission |
+| Permission | Follow the OS reason: authorize the app or contact the administrator; no pairing loop |
+| Connection | Check card power, distance and competing applications |
+| Authentication | If macOS opens the pairing dialog, enter the six-digit code on the card |
+| Data channel | Reconnect when notification subscription fails |
+| Established link | Reconnect the original card, retain drafts and re-record interrupted audio |
+
+Three consecutive pre-session failures pause connection. Pairing is never cleared automatically, and raw OS errors containing device identifiers are not displayed. This batch only requires a desktop update; continued on-card draft sampling still needs batch 015 firmware 0.10.1.

@@ -9,6 +9,27 @@ on the Mac. A fourth firmware runs a clock, Pomodoro and stopwatch independently
 See [mode selection, setup and controls](codex-modes.md). The shared Codex
 features below apply to the three companion profiles, not the offline tools.
 
+## Card device page (firmware 0.6.0)
+
+From quota, click down to open device information; click middle (or up/down) to
+return. Hold down still opens connection help. The offline profile adds device
+information after the stopwatch in its tool cycle; middle returns to the clock.
+The page works without a Mac connection and preserves the top-left clock.
+
+One screen shows battery percentage/voltage, **chip** temperature in Celsius,
+used/total allocatable heap in KiB, application image/partition usage in MiB,
+total Flash, firmware version and boot uptime. The header identifies ESP32-C3
+and the connection profile. Storage is program capacity, not personal files;
+temperature is not ambient or battery temperature. Failed readings show `--`.
+
+The UI worker samples outside the LVGL lock, about every five seconds while
+idle. Voice recording/processing pauses sampling. The header battery, device
+page and USB/BLE reports reuse the same synchronized sample; transmission can
+still lag by one refresh interval. Offline sampling is every five seconds on
+this page and every thirty seconds elsewhere. No new task or Wi-Fi reporting
+path was added. Desktop 0.5.0 remains compatible: select the 0.6.0 merged image
+with its local `.bin` picker; older bundled 0.5.0 images do not include this page.
+
 ## Features and limits
 
 | Feature | Behavior |

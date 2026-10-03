@@ -35,7 +35,7 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='CodexPassport',
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='CodexPassport')
 app = BUNDLE(coll, name='Codex Passport.app', bundle_identifier='local.codex-passport.companion',
              icon=str(root / 'assets/images/codex-passport.icns'),
-             info_plist={'CFBundleDisplayName': 'Codex 随行助手', 'CFBundleShortVersionString': '0.5.0',
+             info_plist={'CFBundleDisplayName': 'Codex 随行助手', 'CFBundleShortVersionString': '0.9.2',
                          'NSBluetoothAlwaysUsageDescription': '通过蓝牙连接你的 AI Passport，传输语音与对话状态。',
                          'NSBluetoothPeripheralUsageDescription': '连接你选择的 AI Passport 卡片。',
                          'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '15.0'})

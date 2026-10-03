@@ -33,16 +33,28 @@ run_static_checks() {
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_companion_model.c main/companion_model.c -o "${test_dir}/test_companion_model"
     "${test_dir}/test_companion_model"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_companion_device_model.c main/companion_device_model.c -o "${test_dir}/test_companion_device_model"
+    "${test_dir}/test_companion_device_model"
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_bridge.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_diagnostics.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_font.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_transports.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_desktop.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_offline_clock.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_battery_history.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_battery_chart.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_battery_upload.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_activity.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_companion_device.py
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_companion_offline.c main/companion_offline_model.c -o "${test_dir}/test_companion_offline"
     "${test_dir}/test_companion_offline"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_companion_battery_log_model.c main/companion_battery_log_model.c main/companion_model.c \
+        -o "${test_dir}/test_companion_battery_log_model"
+    "${test_dir}/test_companion_battery_log_model"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_ui_pixel_math.c main/ui_pixel_math.c \
         -o "${test_dir}/test_ui_pixel_math"

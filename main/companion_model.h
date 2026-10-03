@@ -8,6 +8,13 @@
 #define CP_BODY_SIZE 1804
 #define CP_CURSOR_SIZE 385
 
+typedef enum { CP_IDLE, CP_STARTING, CP_READY, CP_RECORDING, CP_FINISHING, CP_TRANSCRIBING, CP_REVIEW, CP_SENDING } cp_mode_t;
+
+// Local background work is safe while a draft waits or the Mac transcribes it.
+bool cp_telemetry_allowed(cp_mode_t mode);
+// Retaining a draft must not keep the backlight on indefinitely.
+bool cp_screen_should_dim(cp_mode_t mode, int64_t inactive_us);
+
 typedef struct {
     char id[CP_ID_SIZE];
     char title[100];
@@ -34,6 +41,7 @@ typedef struct {
     bool reset_credit_details_complete;
     int64_t reset_credit_expiry[2];
     int64_t updated;
+    bool quota_stale;
     char draft_id[CP_ID_SIZE];
     char draft_thread[CP_ID_SIZE];
     char draft_state[24];
